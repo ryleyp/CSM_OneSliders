@@ -282,12 +282,19 @@
         </div>
       </div>
 
-      <!-- Top cities -->
+      <!-- Display settings -->
       <div>
         <div class="section-label">Display Settings</div>
-        <div class="field">
-          <label for="tc-n">Top locations to show</label>
-          <input type="number" name="top_cities" id="tc-n" min="1" max="20" value="5" />
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div class="field">
+            <label for="tc-n">Top locations</label>
+            <input type="number" name="top_cities" id="tc-n" min="1" max="50" value="5" />
+          </div>
+          <div class="field">
+            <label for="tv-n">Top versions / product</label>
+            <input type="number" name="top_versions" id="tv-n" min="1" max="50" placeholder="all" />
+            <span class="hint">Leave blank to show all</span>
+          </div>
         </div>
       </div>
 

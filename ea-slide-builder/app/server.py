@@ -53,6 +53,10 @@ def generate():
     except ValueError:
         top_cities = 5
 
+    # --- Top-N versions per product ---
+    top_versions_raw = request.form.get("top_versions", "").strip()
+    top_versions = int(top_versions_raw) if top_versions_raw.isdigit() else None
+
     with tempfile.TemporaryDirectory() as tmpdir:
         data_path = Path(tmpdir) / data_file.filename
         data_file.save(data_path)
@@ -72,7 +76,7 @@ def generate():
 
         # Process usage data
         try:
-            data = load_data(data_path, top_cities=top_cities)
+            data = load_data(data_path, top_cities=top_cities, top_versions=top_versions)
         except Exception as e:
             return jsonify({"error": f"Could not read data file: {e}"}), 400
 

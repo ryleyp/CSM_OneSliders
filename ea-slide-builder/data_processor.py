@@ -1,6 +1,9 @@
 """
 Detects and processes the three tab types from CSV or multi-tab XLSX.
 No network calls. Pure pandas computation.
+
+Handles real-world Tableau/BI export column names like:
+  "Year of session_date", "Distinct count of machine_id", "ip_city", etc.
 """
 from __future__ import annotations
 
@@ -21,102 +24,93 @@ def _normalise_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _has_col_containing(cols: list[str], *keywords: str) -> bool:
+    """True if any column name contains any of the keywords as a substring."""
+    return any(kw in col for col in cols for kw in keywords)
+
+
 def _find_col(df: pd.DataFrame, *candidates: str) -> str | None:
-    """Return first column that matches any candidate keyword (whole-word first, then substring)."""
-    # Pass 1: whole-word boundary match
+    """
+    Return the first column whose name contains any candidate keyword.
+    Tries whole-word regex first (more precise), then plain substring.
+    """
+    # Pass 1 — whole-word regex (e.g. "year" matches "year of session_date")
     for col in df.columns:
         for cand in candidates:
-            if re.search(r'\b' + re.escape(cand) + r'\b', col):
+            if re.search(r'\b' + re.escape(cand) + r'\b', col, re.IGNORECASE):
                 return col
-    # Pass 2: substring match (length >= 4 to avoid "count" in "country" etc.)
+    # Pass 2 — substring (handles "ip_city", "product_version", etc.)
     for col in df.columns:
         for cand in candidates:
-            if len(cand) >= 4 and cand in col:
+            if len(cand) >= 4 and cand.lower() in col.lower():
                 return col
     return None
 
 
-def _col_has_values(df: pd.DataFrame, col: str, *values: str) -> bool:
-    """Check whether a column contains any of the given string values (case-insensitive)."""
-    try:
-        vals = df[col].dropna().astype(str).str.strip().str.lower().unique()
-        return any(v.lower() in vals for v in values)
-    except Exception:
-        return False
-
-
 # ---------------------------------------------------------------------------
-# Tab detection  (scored so the best match wins)
+# Tab detection — scored so the best match wins
 # ---------------------------------------------------------------------------
 
-def _machines_score(df: pd.DataFrame) -> int:
+def _machines_score(cols: list[str]) -> int:
     score = 0
-    cols = set(df.columns)
-    # Time columns
-    if any(k in cols for k in ("year", "quarter", "qtr")):
-        score += 3
-    if "month" in cols:
-        score += 2
-    # Machine-type column
-    if any("machine" in c for c in cols):
+    if _has_col_containing(cols, "machine"):
         score += 4
-    # New/Existing values anywhere
-    for col in df.columns:
-        if _col_has_values(df, col, "new", "existing"):
-            score += 5
-            break
-    # Generic count column
-    if any(k in c for c in cols for k in ("count", "session", "usage")):
+    # Time dimension columns
+    if _has_col_containing(cols, "year"):
+        score += 3
+    if _has_col_containing(cols, "quarter", "qtr"):
+        score += 3
+    if _has_col_containing(cols, "month"):
+        score += 2
+    # Count column
+    if _has_col_containing(cols, "count", "session", "machine_id"):
         score += 2
     return score
 
 
-def _software_score(df: pd.DataFrame) -> int:
+def _software_score(cols: list[str]) -> int:
     score = 0
-    cols = set(df.columns)
-    if any("product" in c or "software" in c or "application" in c for c in cols):
+    if _has_col_containing(cols, "product", "software", "application"):
         score += 5
-    if any("version" in c or " ver" in c or c.startswith("ver") for c in cols):
+    if _has_col_containing(cols, "version", "ver"):
         score += 4
-    if any(k in c for c in cols for k in ("count", "usage", "session")):
+    if _has_col_containing(cols, "count", "usage", "session", "machine_id"):
         score += 2
     return score
 
 
-def _cities_score(df: pd.DataFrame) -> int:
+def _cities_score(cols: list[str]) -> int:
     score = 0
-    cols = set(df.columns)
-    if "city" in cols:
+    if _has_col_containing(cols, "city"):
         score += 6
-    if "country" in cols:
-        score += 4
-    if any(k in cols for k in ("location", "site", "region")):
+    if _has_col_containing(cols, "country"):
+        score += 5
+    if _has_col_containing(cols, "region", "state", "province"):
         score += 3
-    if any(k in c for c in cols for k in ("count", "usage", "session")):
+    if _has_col_containing(cols, "count", "value", "session", "machine_id"):
         score += 2
     return score
 
 
 def _detect_tab_type(df: pd.DataFrame) -> str | None:
-    norm = _normalise_cols(df)
+    cols = [str(c).strip().lower() for c in df.columns]
     scores = {
-        "machines": _machines_score(norm),
-        "software": _software_score(norm),
-        "cities":   _cities_score(norm),
+        "machines": _machines_score(cols),
+        "software": _software_score(cols),
+        "cities":   _cities_score(cols),
     }
-    best_type, best_score = max(scores.items(), key=lambda x: x[1])
+    best, best_score = max(scores.items(), key=lambda x: x[1])
     if best_score < 4:
         return None
-    # Require at least 2-point lead over the runner-up to avoid false positives
-    others = [s for t, s in scores.items() if t != best_type]
+    others = [s for t, s in scores.items() if t != best]
     if best_score - max(others) < 2:
-        # Tie-break: machines requires time column, software requires product/version
-        if best_type == "machines" and scores["machines"] >= 5:
+        # Tie-break heuristics
+        if best == "machines" and best_score >= 6:
             return "machines"
-        if best_type == "software" and scores["software"] >= 6:
+        if best == "software" and scores["software"] >= 7:
             return "software"
         return None
-    return best_type
+    return best
 
 
 # ---------------------------------------------------------------------------
@@ -130,22 +124,22 @@ def process_machines(df: pd.DataFrame) -> dict[str, Any]:
     quarter_col = _find_col(df, "quarter", "qtr")
     month_col   = _find_col(df, "month")
     type_col    = _find_col(df, "machine type", "type")
-    count_col   = _find_col(df, "session", "count", "machines", "usage", "qty", "quantity", "users", "seats")
-
+    # Search for count column, excluding already-identified structural columns
+    _skip = {c for c in [year_col, quarter_col, month_col, type_col] if c}
+    df_for_count = df.drop(columns=list(_skip), errors="ignore")
+    count_col = _find_col(df_for_count, "machine_id", "session", "count",
+                          "usage", "qty", "quantity", "users", "seats", "values")
     if not count_col:
-        # Last resort: pick first numeric column that isn't a time/type column
-        time_cols = {c for c in [year_col, quarter_col, month_col, type_col] if c}
         for col in df.columns:
-            if col not in time_cols:
-                if pd.to_numeric(df[col], errors="coerce").notna().sum() > 0:
-                    count_col = col
-                    break
+            if col not in _skip and pd.to_numeric(df[col], errors="coerce").notna().mean() > 0.5:
+                count_col = col
+                break
     if not count_col:
-        raise ValueError("Machines tab: cannot find a count/sessions column.")
+        raise ValueError("Machines tab: no count/sessions column found.")
 
     df[count_col] = pd.to_numeric(df[count_col], errors="coerce").fillna(0)
 
-    # Build period label
+    # Build period label — prefer Year+Quarter, fall back to Year+Month, etc.
     if quarter_col and year_col:
         df["_period"] = df[year_col].astype(str) + " " + df[quarter_col].astype(str)
     elif month_col and year_col:
@@ -163,7 +157,7 @@ def process_machines(df: pd.DataFrame) -> dict[str, Any]:
     quarterly = df.groupby("_period", sort=False)[count_col].sum().reset_index()
     quarterly.columns = ["period", "total"]
 
-    # Preserve original row order
+    # Preserve the order periods first appeared in the file
     seen: list[str] = []
     for p in df["_period"]:
         if p not in seen:
@@ -175,15 +169,16 @@ def process_machines(df: pd.DataFrame) -> dict[str, Any]:
     periods = quarterly["period"].tolist()
 
     if not totals:
-        raise ValueError("Machines tab: no data after grouping.")
+        raise ValueError("Machines tab: no data rows after grouping.")
 
     max_idx = int(quarterly["total"].idxmax())
     min_idx = int(quarterly["total"].idxmin())
 
     pct_changes: list[float] = []
     for i in range(1, len(totals)):
-        if totals[i - 1] != 0:
-            pct_changes.append(round((totals[i] - totals[i - 1]) / totals[i - 1] * 100, 1))
+        prev = totals[i - 1]
+        if prev != 0:
+            pct_changes.append(round((totals[i] - prev) / prev * 100, 1))
     avg_pct_change = round(sum(pct_changes) / len(pct_changes), 1) if pct_changes else 0.0
 
     new_vs_existing: dict[str, int] = {}
@@ -194,24 +189,15 @@ def process_machines(df: pd.DataFrame) -> dict[str, Any]:
         except Exception:
             pass
 
-    monthly_totals: dict[str, int] = {}
-    if month_col:
-        try:
-            mt = df.groupby(df[month_col].astype(str))[count_col].sum()
-            monthly_totals = {str(k): int(v) for k, v in mt.items()}
-        except Exception:
-            pass
-
     return {
-        "periods":        periods,
-        "totals":         [float(t) for t in totals],
-        "max_period":     periods[max_idx],
-        "max_sessions":   int(totals[max_idx]),
-        "min_period":     periods[min_idx],
-        "min_sessions":   int(totals[min_idx]),
-        "avg_pct_change": avg_pct_change,
+        "periods":         periods,
+        "totals":          [float(t) for t in totals],
+        "max_period":      periods[max_idx],
+        "max_sessions":    int(totals[max_idx]),
+        "min_period":      periods[min_idx],
+        "min_sessions":    int(totals[min_idx]),
+        "avg_pct_change":  avg_pct_change,
         "new_vs_existing": new_vs_existing,
-        "monthly_totals": monthly_totals,
     }
 
 
@@ -219,39 +205,43 @@ def process_machines(df: pd.DataFrame) -> dict[str, Any]:
 # Software processing
 # ---------------------------------------------------------------------------
 
-def process_software(df: pd.DataFrame) -> dict[str, Any]:
+def process_software(df: pd.DataFrame, top_versions: int | None = None) -> dict[str, Any]:
     df = _normalise_cols(df)
 
     product_col = _find_col(df, "product", "software", "application", "app", "name")
     version_col = _find_col(df, "version", "ver", "release")
-    count_col   = _find_col(df, "count", "usage", "session", "qty", "quantity", "uses", "users")
+    _skip_sw    = {c for c in [product_col, version_col] if c}
+    df_for_count = df.drop(columns=list(_skip_sw), errors="ignore")
+    count_col   = _find_col(df_for_count, "machine_id", "count", "usage", "session",
+                             "qty", "quantity", "uses", "users", "values")
 
     if not product_col:
-        raise ValueError("Software tab: cannot find a product column.")
+        raise ValueError("Software tab: no product column found.")
     if not count_col:
-        raise ValueError("Software tab: cannot find a usage count column.")
+        raise ValueError("Software tab: no usage count column found.")
 
     df[count_col] = pd.to_numeric(df[count_col], errors="coerce").fillna(0)
     total_usage   = df[count_col].sum()
 
     by_product = df.groupby(product_col)[count_col].sum().sort_values(ascending=False)
 
-    top_versions: dict[str, str] = {}
+    top_versions_map: dict[str, str] = {}
     if version_col:
         for product, grp in df.groupby(product_col):
             top_row = grp.loc[grp[count_col].idxmax()]
-            top_versions[str(product)] = str(top_row[version_col])
+            top_versions_map[str(product)] = str(top_row[version_col])
 
     products_data: list[dict] = []
     for product, usage in by_product.items():
         pct = round(usage / total_usage * 100, 1) if total_usage else 0.0
         products_data.append({
-            "product":     str(product),
-            "usage":       int(usage),
+            "product":      str(product),
+            "usage":        int(usage),
             "pct_of_total": pct,
-            "top_version": top_versions.get(str(product), "N/A"),
+            "top_version":  top_versions_map.get(str(product), "N/A"),
         })
 
+    # Version breakdown — optionally limited per product
     version_breakdown: list[dict] = []
     if version_col:
         by_ver = (
@@ -260,17 +250,22 @@ def process_software(df: pd.DataFrame) -> dict[str, Any]:
             .reset_index()
             .sort_values(count_col, ascending=False)
         )
+        seen_products: dict[str, int] = {}
         for _, row in by_ver.iterrows():
-            version_breakdown.append({
-                "product": str(row[product_col]),
-                "version": str(row[version_col]),
-                "usage":   int(row[count_col]),
-            })
+            prod = str(row[product_col])
+            seen_products[prod] = seen_products.get(prod, 0) + 1
+            if top_versions is None or seen_products[prod] <= top_versions:
+                version_breakdown.append({
+                    "product": prod,
+                    "version": str(row[version_col]),
+                    "usage":   int(row[count_col]),
+                })
 
     return {
         "products":          products_data,
         "total_usage":       int(total_usage),
         "version_breakdown": version_breakdown,
+        "top_versions":      top_versions,
     }
 
 
@@ -281,18 +276,45 @@ def process_software(df: pd.DataFrame) -> dict[str, Any]:
 def process_cities(df: pd.DataFrame, top_n: int = 5) -> dict[str, Any]:
     df = _normalise_cols(df)
 
-    city_col    = _find_col(df, "city", "location", "site")
-    country_col = _find_col(df, "country", "region", "nation")
-    count_col   = _find_col(df, "count", "usage", "session", "qty", "quantity", "uses", "users")
+    city_col    = _find_col(df, "city")
+    country_col = _find_col(df, "country")
+    region_col  = _find_col(df, "region", "state", "province")
+
+    # Identify the count column, but skip columns already claimed as geo columns
+    _geo_cols = {c for c in [city_col, country_col, region_col] if c}
+    df_for_count = df.drop(columns=list(_geo_cols), errors="ignore")
+    count_col_found = _find_col(df_for_count, "values", "machine_id", "session",
+                                "usage", "qty", "quantity", "users")
+    # Fallback: any numeric column not in geo_cols
+    if not count_col_found:
+        for col in df.columns:
+            if col not in _geo_cols and pd.to_numeric(df[col], errors="coerce").notna().mean() > 0.5:
+                count_col_found = col
+                break
+    count_col = count_col_found
 
     if not count_col:
-        raise ValueError("Cities tab: cannot find a usage count column.")
+        raise ValueError("Cities tab: no count column found.")
 
     df[count_col] = pd.to_numeric(df[count_col], errors="coerce").fillna(0)
 
+    # If a product/measure column exists, filter to aggregate rows ("*")
+    # so we don't double-count machines that use multiple products
+    product_col = _find_col(df, "product_name", "product", "software")
+    if product_col and df[product_col].astype(str).str.strip().eq("*").any():
+        df = df[df[product_col].astype(str).str.strip() == "*"].copy()
+
+    # Also handle Measure Names filter column if present
+    measure_names_col = _find_col(df, "measure names", "measure name")
+    if measure_names_col:
+        # Keep only the primary count measure
+        counts_mask = df[measure_names_col].astype(str).str.lower().str.contains("count|machine_id|session")
+        if counts_mask.any():
+            df = df[counts_mask].copy()
+
     group_cols = [c for c in [country_col, city_col] if c]
     if not group_cols:
-        raise ValueError("Cities tab: cannot find city or country column.")
+        raise ValueError("Cities tab: no city or country column found.")
 
     by_city = (
         df.groupby(group_cols, as_index=False)[count_col]
@@ -323,7 +345,7 @@ def process_cities(df: pd.DataFrame, top_n: int = 5) -> dict[str, Any]:
 # Main loader
 # ---------------------------------------------------------------------------
 
-def load_data(path: str | Path, top_cities: int = 5) -> dict[str, Any]:
+def load_data(path: str | Path, top_cities: int = 5, top_versions: int | None = None) -> dict[str, Any]:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Data file not found: {path}")
@@ -348,7 +370,7 @@ def load_data(path: str | Path, top_cities: int = 5) -> dict[str, Any]:
                 if tab_type == "machines":
                     result["machines"] = process_machines(df)
                 elif tab_type == "software":
-                    result["software"] = process_software(df)
+                    result["software"] = process_software(df, top_versions=top_versions)
                 elif tab_type == "cities":
                     result["cities"]   = process_cities(df, top_n=top_cities)
             except Exception as e:
