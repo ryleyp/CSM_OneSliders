@@ -1,0 +1,17 @@
+Year,Quarter,Month,Machine Type,Session Count
+2023,Q1,Jan,New,120
+2023,Q1,Feb,Existing,540
+2023,Q2,Apr,New,145
+2023,Q2,May,Existing,610
+2023,Q3,Jul,New,110
+2023,Q3,Aug,Existing,590
+2023,Q4,Oct,New,170
+2023,Q4,Nov,Existing,680
+2024,Q1,Jan,New,200
+2024,Q1,Feb,Existing,750
+2024,Q2,Apr,New,230
+2024,Q2,May,Existing,820
+2024,Q3,Jul,New,190
+2024,Q3,Aug,Existing,800
+2024,Q4,Oct,New,260
+2024,Q4,Nov,Existing,910
