@@ -206,6 +206,10 @@ def process_machines(df: pd.DataFrame) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def process_software(df: pd.DataFrame, top_versions: int | None = None) -> dict[str, Any]:
+    """
+    top_versions: limit the number of PRODUCTS shown in the Version Usage table.
+                  None = show all products.
+    """
     df = _normalise_cols(df)
 
     product_col = _find_col(df, "product", "software", "application", "app", "name")
@@ -225,23 +229,42 @@ def process_software(df: pd.DataFrame, top_versions: int | None = None) -> dict[
 
     by_product = df.groupby(product_col)[count_col].sum().sort_values(ascending=False)
 
-    top_versions_map: dict[str, str] = {}
+    # Map each product to its top version (the version with highest usage)
+    top_version_map: dict[str, tuple[str, int]] = {}
     if version_col:
         for product, grp in df.groupby(product_col):
             top_row = grp.loc[grp[count_col].idxmax()]
-            top_versions_map[str(product)] = str(top_row[version_col])
+            top_version_map[str(product)] = (
+                str(top_row[version_col]),
+                int(top_row[count_col]),
+            )
 
     products_data: list[dict] = []
     for product, usage in by_product.items():
         pct = round(usage / total_usage * 100, 1) if total_usage else 0.0
+        tv, tv_usage = top_version_map.get(str(product), ("N/A", 0))
         products_data.append({
             "product":      str(product),
             "usage":        int(usage),
             "pct_of_total": pct,
-            "top_version":  top_versions_map.get(str(product), "N/A"),
+            "top_version":  tv,
         })
 
-    # Version breakdown — optionally limited per product
+    # top_version_rows: top N products, each with their single best version row
+    # Used by slide_builder for the Version Usage table
+    top_n_products = products_data if top_versions is None else products_data[:top_versions]
+    top_version_rows: list[dict] = []
+    for p in top_n_products:
+        tv, tv_usage = top_version_map.get(p["product"], ("N/A", 0))
+        tv_pct = round(tv_usage / p["usage"] * 100, 0) if p["usage"] else 0.0
+        top_version_rows.append({
+            "product":           p["product"],
+            "top_version":       tv,
+            "top_version_usage": tv_usage,
+            "top_version_pct":   tv_pct,
+        })
+
+    # Full version breakdown (all products, all versions) — kept for compatibility
     version_breakdown: list[dict] = []
     if version_col:
         by_ver = (
@@ -250,21 +273,18 @@ def process_software(df: pd.DataFrame, top_versions: int | None = None) -> dict[
             .reset_index()
             .sort_values(count_col, ascending=False)
         )
-        seen_products: dict[str, int] = {}
         for _, row in by_ver.iterrows():
-            prod = str(row[product_col])
-            seen_products[prod] = seen_products.get(prod, 0) + 1
-            if top_versions is None or seen_products[prod] <= top_versions:
-                version_breakdown.append({
-                    "product": prod,
-                    "version": str(row[version_col]),
-                    "usage":   int(row[count_col]),
-                })
+            version_breakdown.append({
+                "product": str(row[product_col]),
+                "version": str(row[version_col]),
+                "usage":   int(row[count_col]),
+            })
 
     return {
         "products":          products_data,
         "total_usage":       int(total_usage),
         "version_breakdown": version_breakdown,
+        "top_version_rows":  top_version_rows,
         "top_versions":      top_versions,
     }
 
@@ -330,6 +350,9 @@ def process_cities(df: pd.DataFrame, top_n: int = 5) -> dict[str, Any]:
         label_parts = [str(row[c]) for c in group_cols]
         locations.append({
             "label":        ", ".join(label_parts),
+            "country":      str(row[country_col]) if country_col else "",
+            "region":       str(row[region_col])  if region_col  else "",
+            "city":         str(row[city_col])    if city_col    else "",
             "usage":        int(row[count_col]),
             "pct_of_total": round(row[count_col] / total * 100, 1) if total else 0.0,
         })
