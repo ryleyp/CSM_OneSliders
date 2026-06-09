@@ -18,7 +18,19 @@ pip install -r requirements.txt
 
 ---
 
-## Usage
+## Running the App (recommended)
+
+```bash
+python app/server.py
+```
+
+Opens automatically at **http://localhost:5000** in your browser. Upload your
+data file, fill in the contract fields, and click **Generate**. Download the
+`.pptx` and insights report directly from the page.
+
+---
+
+## CLI Usage (alternative)
 
 ```bash
 python main.py --data <data_file> [options]
