@@ -4,8 +4,6 @@ Runs on http://localhost:5000 — no external network calls.
 """
 from __future__ import annotations
 
-import json
-import os
 import sys
 import tempfile
 import threading
@@ -14,7 +12,6 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
 
-# Allow imports from parent directory
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from contract_loader import load_contract
@@ -23,7 +20,7 @@ from insights import generate_insights
 from slide_builder import build_slide
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB upload limit
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -36,78 +33,51 @@ def index():
 
 @app.route("/generate", methods=["POST"])
 def generate():
-    errors = []
-
-    # --- Data file ---
+    # --- Data file (required) ---
     data_file = request.files.get("data_file")
-    if not data_file or data_file.filename == "":
+    if not data_file or not data_file.filename:
         return jsonify({"error": "Please upload a usage data file (.csv or .xlsx)."}), 400
-
-    suffix = Path(data_file.filename).suffix.lower()
-    if suffix not in (".csv", ".xlsx", ".xls"):
+    if Path(data_file.filename).suffix.lower() not in (".csv", ".xlsx", ".xls"):
         return jsonify({"error": "Data file must be .csv or .xlsx"}), 400
 
-    # --- Contract fields from form ---
-    contract: dict = {
-        "ea_number":              request.form.get("ea_number", "").strip(),
-        "customer_name":          request.form.get("customer_name", "").strip(),
-        "ea_end_date":            request.form.get("ea_end_date", "").strip(),
-        "term_duration":          request.form.get("term_duration", "").strip(),
-        "contract_scope":         request.form.get("contract_scope", "").strip(),
-        "phase":                  request.form.get("phase", "").strip(),
-        "technical_support_level": request.form.get("technical_support_level", "Standard").strip(),
-    }
-
-    try:
-        contract["training_credits_total"] = int(request.form.get("training_credits_total") or 0)
-        contract["training_credits_used"]  = int(request.form.get("training_credits_used") or 0)
-    except ValueError:
-        contract["training_credits_total"] = 0
-        contract["training_credits_used"]  = 0
-
-    # Parse JSON fields for bundles and licenses
-    try:
-        contract["bundles"] = json.loads(request.form.get("bundles") or "[]")
-    except json.JSONDecodeError:
-        contract["bundles"] = []
-
-    try:
-        contract["finite_quantity_licenses"] = json.loads(
-            request.form.get("finite_quantity_licenses") or "[]"
-        )
-    except json.JSONDecodeError:
-        contract["finite_quantity_licenses"] = []
-
-    # --- Optional PDF upload ---
+    # --- PDF (optional) ---
     pdf_file = request.files.get("pdf_file")
 
-    top_cities = int(request.form.get("top_cities") or 5)
+    # --- Training credits remaining (optional number) ---
+    tc_remaining_raw = request.form.get("tc_remaining", "").strip()
+    tc_remaining = int(tc_remaining_raw) if tc_remaining_raw.isdigit() else None
 
-    # Write uploads to temp files
+    # --- Top-N cities ---
+    try:
+        top_cities = int(request.form.get("top_cities") or 5)
+    except ValueError:
+        top_cities = 5
+
     with tempfile.TemporaryDirectory() as tmpdir:
         data_path = Path(tmpdir) / data_file.filename
         data_file.save(data_path)
 
-        # If PDF was uploaded, let contract_loader parse it then merge
+        pdf_path = None
         if pdf_file and pdf_file.filename:
             pdf_path = Path(tmpdir) / pdf_file.filename
             pdf_file.save(pdf_path)
-            pdf_contract = load_contract(
-                config_path=None, pdf_path=pdf_path, interactive=False
-            )
-            # PDF fills in any blanks left by the form
-            for k, v in pdf_contract.items():
-                if not contract.get(k):
-                    contract[k] = v
 
-        # Process data
+        # Load contract from PDF only (no manual form fields)
+        contract = load_contract(
+            config_path=None,
+            pdf_path=pdf_path,
+            tc_remaining=tc_remaining,
+            interactive=False,
+        )
+
+        # Process usage data
         try:
             data = load_data(data_path, top_cities=top_cities)
         except Exception as e:
             return jsonify({"error": f"Could not read data file: {e}"}), 400
 
         if not data:
-            return jsonify({"error": "No recognisable data tabs found in the file."}), 400
+            return jsonify({"error": "No recognisable data tabs found. Check that your file has columns for Year/Quarter, Product/Version, or City/Country."}), 400
 
         # Build outputs
         ea_num   = (contract.get("ea_number") or "EA").replace("/", "-")
@@ -128,19 +98,25 @@ def generate():
         except Exception as e:
             return jsonify({"error": f"Insights generation failed: {e}"}), 500
 
-    tabs_found = list(data.keys())
     return jsonify({
-        "ok": True,
-        "tabs_found": tabs_found,
+        "ok":        True,
+        "tabs_found": list(data.keys()),
         "pptx_name": pptx_path.name,
         "md_name":   md_path.name,
         "insights":  insights_md,
+        "contract_preview": {
+            "ea_number":     contract.get("ea_number", ""),
+            "customer_name": contract.get("customer_name", ""),
+            "ea_end_date":   contract.get("ea_end_date", ""),
+            "term_duration": contract.get("term_duration", ""),
+            "n_licenses":    len(contract.get("finite_quantity_licenses", [])),
+            "n_bundles":     len(contract.get("bundles", [])),
+        },
     })
 
 
 @app.route("/download/<filename>")
 def download(filename: str):
-    # Sanitise: only allow files inside OUTPUT_DIR
     safe = OUTPUT_DIR / Path(filename).name
     if not safe.exists():
         return "File not found", 404
@@ -152,7 +128,6 @@ def open_browser():
 
 
 def run():
-    # Open browser after a short delay so the server is ready
     threading.Timer(1.2, open_browser).start()
     app.run(host="127.0.0.1", port=5000, debug=False)
 

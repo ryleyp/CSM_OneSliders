@@ -6,159 +6,57 @@
   <title>EA Slide Builder</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --dark-green:  #013324;
-      --accent:      #18af7c;
-      --accent-pale: #e6f7f1;
-      --bg:          #f8fafa;
-      --card:        #ffffff;
-      --border:      #d9e3e0;
-      --text:        #1a2e28;
-      --muted:       #6b8a80;
-      --danger:      #c0392b;
-      --radius:      10px;
+      --dark:   #013324;
+      --accent: #18af7c;
+      --pale:   #e6f7f1;
+      --bg:     #f5f8f7;
+      --card:   #ffffff;
+      --border: #d4e3de;
+      --text:   #1a2e28;
+      --muted:  #6b8a80;
+      --danger: #c0392b;
+      --r:      10px;
     }
-
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
     }
-
     header {
-      background: var(--dark-green);
+      background: var(--dark);
       color: #fff;
-      padding: 18px 32px;
+      padding: 16px 32px;
       display: flex;
       align-items: center;
       gap: 14px;
     }
-    header .logo {
-      width: 36px; height: 36px;
+    .logo {
+      width: 38px; height: 38px;
       background: var(--accent);
       border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 18px; font-weight: 700; color: #fff;
+      font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -1px;
     }
-    header h1 { font-size: 20px; font-weight: 600; }
-    header p  { font-size: 12px; color: #a8c4bb; margin-top: 2px; }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header p  { font-size: 11px; color: #9ac2b5; margin-top: 2px; }
 
+    /* -------- two-column layout -------- */
     .layout {
       display: grid;
-      grid-template-columns: 380px 1fr;
-      gap: 0;
-      min-height: calc(100vh - 72px);
+      grid-template-columns: 360px 1fr;
+      min-height: calc(100vh - 70px);
     }
-
-    /* ---- Left sidebar (form) ---- */
     .sidebar {
       background: var(--card);
       border-right: 1px solid var(--border);
-      padding: 28px 24px;
-      overflow-y: auto;
+      padding: 28px 22px;
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 22px;
+      overflow-y: auto;
     }
-
-    .section-title {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-      margin-bottom: 10px;
-    }
-
-    .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
-    .field label { font-size: 12px; font-weight: 600; color: var(--text); }
-    .field input, .field select {
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 13px;
-      color: var(--text);
-      background: #fff;
-      transition: border-color 0.15s;
-    }
-    .field input:focus, .field select:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px #18af7c22;
-    }
-    .field .hint { font-size: 11px; color: var(--muted); }
-
-    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
-    /* Drop zones */
-    .dropzone {
-      border: 2px dashed var(--border);
-      border-radius: var(--radius);
-      padding: 18px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-      position: relative;
-    }
-    .dropzone:hover, .dropzone.drag-over {
-      border-color: var(--accent);
-      background: var(--accent-pale);
-    }
-    .dropzone input[type="file"] {
-      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
-    }
-    .dropzone .dz-icon { font-size: 28px; margin-bottom: 6px; }
-    .dropzone .dz-label { font-size: 13px; font-weight: 600; color: var(--text); }
-    .dropzone .dz-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
-    .dropzone .dz-chosen {
-      font-size: 12px; color: var(--accent); font-weight: 600;
-      margin-top: 6px; display: none;
-    }
-
-    /* Dynamic tables */
-    .dyn-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
-    .dyn-table th {
-      background: var(--dark-green); color: #fff;
-      padding: 6px 8px; text-align: left; font-weight: 600;
-    }
-    .dyn-table td { padding: 4px 4px; border-bottom: 1px solid var(--border); }
-    .dyn-table td input {
-      width: 100%; padding: 4px 6px; border: 1px solid var(--border);
-      border-radius: 4px; font-size: 12px;
-    }
-    .dyn-table td input:focus { outline: none; border-color: var(--accent); }
-    .dyn-table .del-btn {
-      background: none; border: none; cursor: pointer;
-      color: var(--muted); font-size: 15px; padding: 2px 4px;
-    }
-    .dyn-table .del-btn:hover { color: var(--danger); }
-    .add-row-btn {
-      margin-top: 6px; font-size: 12px; color: var(--accent);
-      background: none; border: none; cursor: pointer; font-weight: 600;
-      padding: 4px 0;
-    }
-    .add-row-btn:hover { text-decoration: underline; }
-
-    /* Generate button */
-    .generate-btn {
-      width: 100%;
-      padding: 13px;
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: var(--radius);
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background 0.15s, transform 0.1s;
-    }
-    .generate-btn:hover { background: #14996d; }
-    .generate-btn:active { transform: scale(0.98); }
-    .generate-btn:disabled { background: #a0c8bb; cursor: not-allowed; }
-
-    /* ---- Right panel (output) ---- */
     .output-panel {
       padding: 32px;
       display: flex;
@@ -166,107 +64,172 @@
       gap: 20px;
     }
 
-    .placeholder {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+    /* -------- section labels -------- */
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
       color: var(--muted);
-      gap: 12px;
+      margin-bottom: 8px;
     }
-    .placeholder .big-icon { font-size: 56px; }
-    .placeholder p { font-size: 14px; max-width: 280px; text-align: center; line-height: 1.5; }
+    .optional-tag {
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 10px;
+    }
 
-    /* Status / spinner */
-    .status-bar {
-      background: var(--dark-green);
-      color: #fff;
-      padding: 12px 18px;
-      border-radius: var(--radius);
+    /* -------- drop zones -------- */
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: var(--r);
+      padding: 20px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      position: relative;
+      display: block;
+    }
+    .dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--pale); }
+    .dropzone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .dz-icon  { font-size: 30px; margin-bottom: 6px; }
+    .dz-label { font-size: 13px; font-weight: 600; }
+    .dz-sub   { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .dz-file  {
+      display: none;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--accent);
+      font-weight: 600;
+      background: var(--pale);
+      border-radius: 6px;
+      padding: 4px 8px;
+    }
+
+    /* -------- single field -------- */
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 12px; font-weight: 600; }
+    .field input {
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
       font-size: 13px;
+      color: var(--text);
+      background: #fff;
+    }
+    .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px #18af7c20; }
+    .field .hint { font-size: 11px; color: var(--muted); }
+
+    /* -------- generate button -------- */
+    .gen-btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--r);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+      margin-top: 4px;
+    }
+    .gen-btn:hover { background: #14996d; }
+    .gen-btn:active { transform: scale(.98); }
+    .gen-btn:disabled { background: #a0c8bb; cursor: not-allowed; }
+
+    /* -------- status bar -------- */
+    .status {
       display: none;
       align-items: center;
       gap: 10px;
+      padding: 12px 16px;
+      border-radius: var(--r);
+      font-size: 13px;
+      font-weight: 500;
     }
-    .status-bar.visible { display: flex; }
-    .status-bar.error { background: var(--danger); }
+    .status.show  { display: flex; }
+    .status.ok    { background: var(--dark); color: #fff; }
+    .status.error { background: var(--danger); color: #fff; }
     .spinner {
-      width: 16px; height: 16px;
-      border: 2px solid #ffffff55;
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      flex-shrink: 0;
+      width: 16px; height: 16px; flex-shrink: 0;
+      border: 2px solid #ffffff44; border-top-color: #fff;
+      border-radius: 50%; animation: spin .7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Download cards */
-    .download-cards {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
+    /* -------- contract preview pills -------- */
+    .contract-preview {
+      background: var(--pale);
+      border: 1px solid #b2ddd0;
+      border-radius: var(--r);
+      padding: 14px 16px;
     }
+    .contract-preview h4 { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; }
+    .pill-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pill {
+      background: #fff; border: 1px solid #b2ddd0;
+      border-radius: 20px; padding: 3px 10px;
+      font-size: 11px; color: var(--text);
+    }
+    .pill strong { color: var(--dark); }
+
+    /* -------- download cards -------- */
+    .dl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .dl-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: var(--r);
       padding: 18px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
+      display: flex; flex-direction: column; gap: 8px;
     }
-    .dl-card .file-icon { font-size: 28px; }
-    .dl-card .file-name { font-size: 13px; font-weight: 600; word-break: break-all; }
-    .dl-card .file-desc { font-size: 12px; color: var(--muted); }
+    .dl-card .icon { font-size: 26px; }
+    .dl-card .name { font-size: 12px; font-weight: 700; word-break: break-all; }
+    .dl-card .desc { font-size: 11px; color: var(--muted); }
     .dl-btn {
-      margin-top: 6px;
-      padding: 8px 14px;
-      background: var(--dark-green);
-      color: #fff;
-      border: none;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-block;
-      text-align: center;
+      margin-top: 6px; padding: 8px 14px;
+      background: var(--dark); color: #fff;
+      border: none; border-radius: 6px;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      text-decoration: none; display: inline-block; text-align: center;
     }
     .dl-btn:hover { background: #025039; }
 
-    /* Insights preview */
+    /* -------- insights preview -------- */
     .insights-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: var(--r);
       padding: 20px 24px;
-      max-height: 480px;
+      max-height: 440px;
       overflow-y: auto;
     }
-    .insights-card h3 {
-      font-size: 13px; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.07em;
-      margin-bottom: 14px;
-    }
-    /* Simple markdown-ish styling for insights */
-    .md-preview h1 { font-size: 18px; color: var(--dark-green); margin-bottom: 4px; }
-    .md-preview h2 { font-size: 14px; color: var(--dark-green); margin: 16px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-    .md-preview h3 { font-size: 13px; margin: 10px 0 4px; line-height: 1.5; }
-    .md-preview p  { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-    .md-preview ul { padding-left: 18px; }
-    .md-preview li { font-size: 12px; margin-bottom: 3px; }
-    .md-preview hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
-    .md-preview strong { color: var(--text); }
-    .md-preview em { color: var(--muted); font-style: italic; font-size: 11px; }
+    .insights-card h3 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 14px; font-weight: 700; }
+    .md h1  { font-size: 17px; color: var(--dark); margin-bottom: 4px; }
+    .md h2  { font-size: 13px; color: var(--dark); margin: 14px 0 7px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    .md h3  { font-size: 12px; margin: 8px 0 4px; line-height: 1.5; }
+    .md p   { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .md ul  { padding-left: 18px; }
+    .md li  { font-size: 12px; margin-bottom: 3px; }
+    .md hr  { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+    .md strong { color: var(--text); }
+    .md em     { font-style: italic; color: var(--muted); font-size: 11px; }
 
-    .tabs-found {
-      display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;
+    /* -------- tabs-found chips -------- */
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip  { background: var(--pale); color: var(--accent); border-radius: 4px; padding: 2px 9px; font-size: 11px; font-weight: 700; }
+
+    /* -------- placeholder -------- */
+    .placeholder {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: var(--muted); gap: 10px; text-align: center;
     }
-    .tab-chip {
-      background: var(--accent-pale); color: var(--accent);
-      border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600;
-    }
+    .placeholder .big { font-size: 52px; }
+    .placeholder p { font-size: 13px; max-width: 260px; line-height: 1.6; }
   </style>
 </head>
 <body>
@@ -275,7 +238,7 @@
   <div class="logo">EA</div>
   <div>
     <h1>EA Slide Builder</h1>
-    <p>Offline account summary generator — no network calls</p>
+    <p>Fully offline — no network calls</p>
   </div>
 </header>
 
@@ -283,277 +246,187 @@
 
   <!-- ===== SIDEBAR ===== -->
   <aside class="sidebar">
-    <form id="main-form" enctype="multipart/form-data">
+    <form id="form" enctype="multipart/form-data">
 
-      <!-- Upload: data file -->
+      <!-- Usage data -->
       <div>
-        <div class="section-title">Usage Data</div>
-        <label class="dropzone" id="data-dz">
-          <input type="file" name="data_file" id="data-file-input" accept=".csv,.xlsx,.xls" required>
+        <div class="section-label">Usage Data</div>
+        <label class="dropzone" id="dz-data">
+          <input type="file" name="data_file" id="fi-data" accept=".csv,.xlsx,.xls" required>
           <div class="dz-icon">📊</div>
-          <div class="dz-label">Drop your data file here</div>
-          <div class="dz-sub">.csv or .xlsx (multi-tab)</div>
-          <div class="dz-chosen" id="data-chosen"></div>
+          <div class="dz-label">Drop usage file here</div>
+          <div class="dz-sub">.csv or multi-tab .xlsx</div>
+          <div class="dz-file" id="fn-data"></div>
         </label>
       </div>
 
-      <!-- Upload: PDF (optional) -->
+      <!-- Contract PDF -->
       <div>
-        <div class="section-title">Contract PDF <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
-        <label class="dropzone" id="pdf-dz">
-          <input type="file" name="pdf_file" id="pdf-file-input" accept=".pdf">
+        <div class="section-label">Contract PDF <span class="optional-tag">(recommended — auto-fills all fields)</span></div>
+        <label class="dropzone" id="dz-pdf">
+          <input type="file" name="pdf_file" id="fi-pdf" accept=".pdf">
           <div class="dz-icon">📄</div>
           <div class="dz-label">Drop contract PDF here</div>
-          <div class="dz-sub">Auto-extracts EA number, end date, term…</div>
-          <div class="dz-chosen" id="pdf-chosen"></div>
+          <div class="dz-sub">Extracts EA number, end date, licenses, bundles…</div>
+          <div class="dz-file" id="fn-pdf"></div>
         </label>
       </div>
 
-      <!-- Contract fields -->
+      <!-- Training credits remaining -->
       <div>
-        <div class="section-title">Contract Info</div>
+        <div class="section-label">Training Credits</div>
         <div class="field">
-          <label>EA Number</label>
-          <input type="text" name="ea_number" placeholder="EA-123456" />
-        </div>
-        <div class="field">
-          <label>Customer Name</label>
-          <input type="text" name="customer_name" placeholder="Acme Corporation" />
-        </div>
-        <div class="row-2">
-          <div class="field">
-            <label>EA End Date</label>
-            <input type="date" name="ea_end_date" />
-          </div>
-          <div class="field">
-            <label>Term Duration</label>
-            <input type="text" name="term_duration" placeholder="3 Years" />
-          </div>
-        </div>
-        <div class="row-2">
-          <div class="field">
-            <label>Contract Scope</label>
-            <input type="text" name="contract_scope" placeholder="Enterprise" />
-          </div>
-          <div class="field">
-            <label>Phase</label>
-            <input type="text" name="phase" placeholder="Phase 2" />
-          </div>
-        </div>
-        <div class="field">
-          <label>Technical Support Level</label>
-          <select name="technical_support_level">
-            <option>Standard</option>
-            <option>Advanced</option>
-            <option>Premier</option>
-          </select>
-        </div>
-        <div class="row-2">
-          <div class="field">
-            <label>Training Credits (Total)</label>
-            <input type="number" name="training_credits_total" min="0" placeholder="40" />
-          </div>
-          <div class="field">
-            <label>Training Credits (Used)</label>
-            <input type="number" name="training_credits_used" min="0" placeholder="12" />
-          </div>
-        </div>
-        <div class="field">
-          <label>Top Locations to Show</label>
-          <input type="number" name="top_cities" min="1" max="20" value="5" />
+          <label for="tc">Credits Remaining</label>
+          <input type="number" name="tc_remaining" id="tc" min="0" placeholder="e.g. 28" />
+          <span class="hint">Leave blank if not known — pulled from PDF if available.</span>
         </div>
       </div>
 
-      <!-- Bundles -->
+      <!-- Top cities -->
       <div>
-        <div class="section-title">Bundles</div>
-        <table class="dyn-table">
-          <thead><tr><th>Bundle Name</th><th>Type</th><th></th></tr></thead>
-          <tbody id="bundles-body"></tbody>
-        </table>
-        <button type="button" class="add-row-btn" onclick="addBundle()">+ Add bundle</button>
+        <div class="section-label">Display Settings</div>
+        <div class="field">
+          <label for="tc-n">Top locations to show</label>
+          <input type="number" name="top_cities" id="tc-n" min="1" max="20" value="5" />
+        </div>
       </div>
 
-      <!-- Licenses -->
-      <div>
-        <div class="section-title">Finite Quantity Licenses</div>
-        <table class="dyn-table">
-          <thead><tr><th>Qty</th><th>Product</th><th>Type</th><th></th></tr></thead>
-          <tbody id="licenses-body"></tbody>
-        </table>
-        <button type="button" class="add-row-btn" onclick="addLicense()">+ Add license</button>
-      </div>
-
-      <button type="submit" class="generate-btn" id="gen-btn">⚡ Generate Slide &amp; Insights</button>
+      <button type="submit" class="gen-btn" id="gen-btn">⚡ Generate</button>
     </form>
   </aside>
 
-  <!-- ===== OUTPUT PANEL ===== -->
+  <!-- ===== OUTPUT ===== -->
   <main class="output-panel">
+
     <div id="placeholder" class="placeholder">
-      <div class="big-icon">🗂️</div>
-      <p>Upload your usage data and fill in the contract fields, then click <strong>Generate</strong>.</p>
+      <div class="big">🗂️</div>
+      <p>Upload your usage data (and optionally a contract PDF), then click <strong>Generate</strong>.</p>
     </div>
 
-    <div id="status-bar" class="status-bar"></div>
+    <div id="status" class="status"></div>
 
-    <div id="results" style="display:none; display:flex; flex-direction:column; gap:20px;">
-      <div>
-        <div class="tabs-found" id="tabs-found"></div>
-      </div>
-      <div class="download-cards">
+    <div id="results" style="display:none; flex-direction:column; gap:20px;">
+
+      <!-- Contract info auto-extracted -->
+      <div class="contract-preview" id="contract-preview"></div>
+
+      <!-- Tabs detected + download -->
+      <div class="chips" id="chips"></div>
+      <div class="dl-grid">
         <div class="dl-card">
-          <div class="file-icon">📊</div>
-          <div class="file-name" id="pptx-name">—</div>
-          <div class="file-desc">16:9 PowerPoint account summary slide</div>
-          <a class="dl-btn" id="pptx-dl" href="#">⬇ Download .pptx</a>
+          <div class="icon">📊</div>
+          <div class="name" id="pptx-name"></div>
+          <div class="desc">16:9 PowerPoint account summary</div>
+          <a class="dl-btn" id="pptx-dl">⬇ Download .pptx</a>
         </div>
         <div class="dl-card">
-          <div class="file-icon">📝</div>
-          <div class="file-name" id="md-name">—</div>
-          <div class="file-desc">Prioritized CSM insights report</div>
-          <a class="dl-btn" id="md-dl" href="#">⬇ Download .md</a>
+          <div class="icon">📝</div>
+          <div class="name" id="md-name"></div>
+          <div class="desc">Prioritized CSM insights report</div>
+          <a class="dl-btn" id="md-dl">⬇ Download .md</a>
         </div>
       </div>
+
+      <!-- Insights preview -->
       <div class="insights-card">
         <h3>Insights Preview</h3>
-        <div class="md-preview" id="insights-preview"></div>
+        <div class="md" id="insights-md"></div>
       </div>
+
     </div>
   </main>
-
 </div>
 
 <script>
-// ---- Dropzone UI ----
-function setupDropzone(inputId, chosenId, dzId) {
+// ---- Dropzone helpers ----
+function dz(inputId, labelId, fileNameId) {
   const input = document.getElementById(inputId);
-  const chosen = document.getElementById(chosenId);
-  const dz = document.getElementById(dzId);
+  const lbl   = document.getElementById(labelId);
+  const fn    = document.getElementById(fileNameId);
   input.addEventListener('change', () => {
-    if (input.files[0]) {
-      chosen.textContent = '✓ ' + input.files[0].name;
-      chosen.style.display = 'block';
-    }
+    if (input.files[0]) { fn.textContent = '✓ ' + input.files[0].name; fn.style.display='block'; }
   });
-  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-  dz.addEventListener('drop', () => dz.classList.remove('drag-over'));
+  lbl.addEventListener('dragover', e => { e.preventDefault(); lbl.classList.add('over'); });
+  lbl.addEventListener('dragleave', () => lbl.classList.remove('over'));
+  lbl.addEventListener('drop', () => lbl.classList.remove('over'));
 }
-setupDropzone('data-file-input', 'data-chosen', 'data-dz');
-setupDropzone('pdf-file-input',  'pdf-chosen',  'pdf-dz');
+dz('fi-data', 'dz-data', 'fn-data');
+dz('fi-pdf',  'dz-pdf',  'fn-pdf');
 
-// ---- Dynamic bundle rows ----
-function addBundle(name='', type='Suite') {
-  const tbody = document.getElementById('bundles-body');
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td><input type="text" placeholder="Design Suite Bundle" value="${name}"/></td>
-    <td><input type="text" placeholder="Suite" value="${type}"/></td>
-    <td><button type="button" class="del-btn" onclick="this.closest('tr').remove()">✕</button></td>`;
-  tbody.appendChild(tr);
-}
-
-function addLicense(count='', name='', type='Named User') {
-  const tbody = document.getElementById('licenses-body');
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td><input type="number" placeholder="500" value="${count}" style="width:60px"/></td>
-    <td><input type="text" placeholder="AutoCAD" value="${name}"/></td>
-    <td><input type="text" placeholder="Named User" value="${type}"/></td>
-    <td><button type="button" class="del-btn" onclick="this.closest('tr').remove()">✕</button></td>`;
-  tbody.appendChild(tr);
-}
-
-// Seed one row each
-addBundle('Design Suite Bundle', 'Suite');
-addLicense(500, 'AutoCAD', 'Named User');
-
-// ---- Serialize dynamic tables ----
-function getBundles() {
-  return [...document.querySelectorAll('#bundles-body tr')].map(tr => {
-    const [name, type] = [...tr.querySelectorAll('input')].map(i => i.value.trim());
-    return { name, type };
-  }).filter(b => b.name);
-}
-function getLicenses() {
-  return [...document.querySelectorAll('#licenses-body tr')].map(tr => {
-    const inputs = [...tr.querySelectorAll('input')];
-    return {
-      count: parseInt(inputs[0].value) || 0,
-      name:  inputs[1].value.trim(),
-      type:  inputs[2].value.trim(),
-    };
-  }).filter(l => l.name);
-}
-
-// ---- Simple markdown renderer ----
-function renderMarkdown(md) {
-  return md
+// ---- Minimal Markdown renderer ----
+function md(text) {
+  return text
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/^---$/gm, '<hr>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, m => '<ul>' + m + '</ul>')
+    .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm,   '<h1>$1</h1>')
+    .replace(/^---$/gm,      '<hr>')
+    .replace(/^- (.+)$/gm,   '<li>$1</li>')
+    .replace(/(<li>[\s\S]*?<\/li>\n?)+/g, m => '<ul>' + m + '</ul>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/_(.+?)_/g, '<em>$1</em>')
+    .replace(/_(.+?)_/g,       '<em>$1</em>')
     .replace(/\n\n/g, '</p><p>')
-    .replace(/^(?!<[hup]|<li|<hr)(.+)$/gm, '<p>$1</p>');
+    .replace(/^(?!<[hup\/<]|<li|<hr)(.+)$/gm, '<p>$1</p>');
 }
 
 // ---- Form submit ----
-document.getElementById('main-form').addEventListener('submit', async (e) => {
+document.getElementById('form').addEventListener('submit', async e => {
   e.preventDefault();
-
-  const btn = document.getElementById('gen-btn');
-  const statusBar = document.getElementById('status-bar');
-  const results = document.getElementById('results');
-  const placeholder = document.getElementById('placeholder');
+  const btn  = document.getElementById('gen-btn');
+  const stat = document.getElementById('status');
+  const res  = document.getElementById('results');
+  const ph   = document.getElementById('placeholder');
 
   btn.disabled = true;
-  placeholder.style.display = 'none';
-  results.style.display = 'none';
-  statusBar.className = 'status-bar visible';
-  statusBar.innerHTML = '<div class="spinner"></div> Generating slide and insights…';
-
-  const fd = new FormData(e.target);
-  fd.set('bundles', JSON.stringify(getBundles()));
-  fd.set('finite_quantity_licenses', JSON.stringify(getLicenses()));
+  ph.style.display  = 'none';
+  res.style.display = 'none';
+  stat.className = 'status show ok';
+  stat.innerHTML = '<div class="spinner"></div> Processing…';
 
   try {
-    const resp = await fetch('/generate', { method: 'POST', body: fd });
+    const resp = await fetch('/generate', { method: 'POST', body: new FormData(e.target) });
     const data = await resp.json();
 
     if (!resp.ok || data.error) {
-      statusBar.className = 'status-bar visible error';
-      statusBar.innerHTML = '⚠ ' + (data.error || 'Unknown error');
+      stat.className = 'status show error';
+      stat.textContent = '⚠ ' + (data.error || 'Unknown error');
       btn.disabled = false;
       return;
     }
 
-    // Populate results
+    // Contract preview
+    const cp = data.contract_preview;
+    document.getElementById('contract-preview').innerHTML = `
+      <h4>Auto-extracted from PDF</h4>
+      <div class="pill-grid">
+        ${cp.ea_number     ? `<div class="pill"><strong>EA#</strong> ${cp.ea_number}</div>` : ''}
+        ${cp.customer_name ? `<div class="pill"><strong>Customer</strong> ${cp.customer_name}</div>` : ''}
+        ${cp.ea_end_date   ? `<div class="pill"><strong>End Date</strong> ${cp.ea_end_date}</div>` : ''}
+        ${cp.term_duration && cp.term_duration !== 'N/A' ? `<div class="pill"><strong>Term</strong> ${cp.term_duration}</div>` : ''}
+        <div class="pill"><strong>Licenses</strong> ${cp.n_licenses} rows</div>
+        ${cp.n_bundles > 0 ? `<div class="pill"><strong>Bundles</strong> ${cp.n_bundles}</div>` : ''}
+      </div>`;
+
+    // Tabs chips
+    document.getElementById('chips').innerHTML =
+      data.tabs_found.map(t => `<span class="chip">✓ ${t}</span>`).join('');
+
+    // Download links
     document.getElementById('pptx-name').textContent = data.pptx_name;
     document.getElementById('md-name').textContent   = data.md_name;
     document.getElementById('pptx-dl').href = '/download/' + encodeURIComponent(data.pptx_name);
     document.getElementById('md-dl').href   = '/download/' + encodeURIComponent(data.md_name);
 
-    const tabsEl = document.getElementById('tabs-found');
-    tabsEl.innerHTML = data.tabs_found.map(t =>
-      `<span class="tab-chip">✓ ${t}</span>`
-    ).join('');
+    // Insights
+    document.getElementById('insights-md').innerHTML = md(data.insights);
 
-    document.getElementById('insights-preview').innerHTML = renderMarkdown(data.insights);
-
-    statusBar.className = 'status-bar visible';
-    statusBar.innerHTML = '✓ Done — outputs ready for download';
-    results.style.display = 'flex';
+    stat.className = 'status show ok';
+    stat.textContent = '✓ Done';
+    res.style.display = 'flex';
 
   } catch (err) {
-    statusBar.className = 'status-bar visible error';
-    statusBar.innerHTML = '⚠ Network error: ' + err.message;
+    stat.className = 'status show error';
+    stat.textContent = '⚠ ' + err.message;
   }
-
   btn.disabled = false;
 });
 </script>
