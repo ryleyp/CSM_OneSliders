@@ -1,0 +1,17 @@
+# ea-slide-builder runs FULLY OFFLINE / local-only.
+# This config hard-disables Streamlit's usage telemetry so nothing phones home.
+
+[browser]
+# Do NOT send anonymous usage statistics to Streamlit/Segment.
+gatherUsageStats = false
+
+[server]
+# Listen on all local interfaces so teammates on your LAN can reach the app at
+# http://<your-PC-ip>:8501  (you can also pass --server.address=0.0.0.0 on launch).
+address = "0.0.0.0"
+port = 8501
+headless = true
+
+[global]
+# No "show warning on direct execution" prompts, etc.
+developmentMode = false
