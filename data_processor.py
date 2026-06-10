@@ -92,17 +92,138 @@ def _looks_like_header(cells: list[str], numeric_cols: list[int]) -> bool:
 # 1. Machine Count
 # --------------------------------------------------------------------------- #
 def parse_machine_count(text: str) -> pd.DataFrame:
-    """Parse 'period, new, existing' rows into a DataFrame.
+    """Parse a machine-count paste into period / new / existing / total rows.
 
-    Returns columns: period, new, existing, total.
-    Tolerant of an optional header row and of extra columns.
+    Supports two layouts and auto-detects which one was pasted:
+
+    1. LONG / tidy (Tableau-style), one row per month x machine type, e.g.
+         Year of session_date | Quarter | Month | Machine Type | Distinct count
+         2021 | Q1 | March | Existing | 363
+       These are rolled up to QUARTERLY periods (the slide reports an
+       "avg quarterly increase"). A quarter's value is the AVERAGE of its
+       monthly distinct counts, since machines recur month to month and summing
+       them would double-count.
+
+    2. WIDE, one row per period: period | new | existing.
+
+    Returns columns: period, new, existing, total (chronological order).
     """
     rows = _split_rows(text)
+    if _is_long_machine_format(rows):
+        return _parse_machine_long(rows)
+    return _parse_machine_wide(rows)
+
+
+def _is_long_machine_format(rows: list[list[str]]) -> bool:
+    """Long format has a 'Machine Type' column whose values are New/Existing."""
+    for cells in rows:
+        if len(cells) < 4:
+            continue
+        joined = " ".join(c.lower() for c in cells)
+        if "machine type" in joined:
+            return True
+        # A standalone New/Existing cell alongside >=4 columns => long format.
+        if any(re.fullmatch(r"(new|existing)", c.strip(), re.IGNORECASE)
+               for c in cells):
+            return True
+    return False
+
+
+def _month_num(text: str) -> int | None:
+    if not text:
+        return None
+    return _MONTHS.get(str(text).strip()[:3].upper())
+
+
+def _parse_machine_long(rows: list[list[str]]) -> pd.DataFrame:
+    """Roll a long/tidy export up to quarterly new/existing/total averages."""
+    if not rows:
+        return pd.DataFrame(columns=["period", "new", "existing", "total"])
+
+    # Locate columns. Use header keywords when the first row is a header,
+    # otherwise fall back to the canonical positional order.
+    header = rows[0]
+    has_header = not _is_number(header[-1])
+    year_i, month_i, quarter_i, type_i, count_i = 0, 2, 1, 3, len(header) - 1
+    if has_header:
+        for i, h in enumerate(header):
+            hl = h.lower()
+            if "year" in hl:
+                year_i = i
+            elif "quarter" in hl:
+                quarter_i = i
+            elif "month" in hl:
+                month_i = i
+            elif "machine type" in hl or hl.strip() == "type" or "type" in hl:
+                type_i = i
+            elif any(k in hl for k in ("count", "machine_id", "distinct")):
+                count_i = i
+        data_rows = rows[1:]
+    else:
+        data_rows = rows
+
+    # Aggregate counts by (year, quarter) -> month -> {new, existing}.
+    buckets: dict[tuple[int, int], dict[int, dict[str, float]]] = {}
+    for cells in data_rows:
+        if len(cells) <= max(year_i, month_i, type_i, count_i):
+            continue
+        year = _to_number(cells[year_i])
+        mnum = _month_num(cells[month_i])
+        if mnum is None and quarter_i < len(cells):
+            # Fall back to the quarter column if month is missing/garbled.
+            qm = re.search(r"[1-4]", cells[quarter_i])
+            if qm:
+                mnum = (int(qm.group(0)) - 1) * 3 + 2  # mid-quarter month
+        count = _to_number(cells[count_i])
+        if year is None or mnum is None or count is None:
+            continue
+        mtype = cells[type_i].strip().lower()
+        if "new" in mtype:
+            key = "new"
+        elif "exist" in mtype:
+            key = "existing"
+        else:
+            continue
+        quarter = (mnum - 1) // 3 + 1
+        bucket = buckets.setdefault((int(year), quarter), {})
+        month_entry = bucket.setdefault(mnum, {"new": 0.0, "existing": 0.0})
+        month_entry[key] += count
+
+    # Average each quarter's monthly snapshots into one value per period.
+    records: list[dict] = []
+    for (year, quarter) in sorted(buckets):
+        months = buckets[(year, quarter)]
+        n_months = len(months) or 1
+        new_q = round(sum(m["new"] for m in months.values()) / n_months)
+        exist_q = round(sum(m["existing"] for m in months.values()) / n_months)
+        records.append({
+            "period": f"Q{quarter} {year}",
+            "new": new_q,
+            "existing": exist_q,
+            "total": new_q + exist_q,
+            "_months": n_months,
+        })
+
+    # Drop trailing INCOMPLETE quarters (e.g. a current quarter still in
+    # progress with fewer months than a full one) so a partial period doesn't
+    # masquerade as the min on the trend. Only trims from the end, and keys on
+    # month-completeness, never on the value itself.
+    if records:
+        full = max(r["_months"] for r in records)
+        while len(records) > 1 and records[-1]["_months"] < full:
+            records.pop()
+    for r in records:
+        r.pop("_months", None)
+
+    return pd.DataFrame(records, columns=["period", "new", "existing", "total"])
+
+
+def _parse_machine_wide(rows: list[list[str]]) -> pd.DataFrame:
+    """Wide layout: one row per period -> period | new | existing."""
     records: list[dict] = []
     for i, cells in enumerate(rows):
         if len(cells) < 3:
             continue
-        # Skip a header row (first row with non-numeric new/existing cells).
         if i == 0 and _looks_like_header(cells, [1, 2]):
             continue
         period = cells[0]

@@ -56,8 +56,11 @@ c1, c2, c3 = st.columns(3)
 
 with c1:
     st.subheader("1. Machine Count")
-    st.caption("Columns: **Period · New · Existing**  \n"
-               "e.g. `Q1 2025⇥120⇥1500`")
+    st.caption("Paste the BI export with columns: **Year · Quarter · Month · "
+               "Machine Type · Distinct count**  \n"
+               "e.g. `2025⇥Q1⇥March⇥Existing⇥711`  \n"
+               "Rolled up to quarterly totals automatically. (A simple "
+               "`Period · New · Existing` table also works.)")
     machine_text = st.text_area("Machine count table", height=180,
                                 key="machine_text", label_visibility="collapsed")
 
