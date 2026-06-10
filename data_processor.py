@@ -270,6 +270,35 @@ def compute_machine_stats(df: pd.DataFrame) -> dict:
 # --------------------------------------------------------------------------- #
 # 2. Locations
 # --------------------------------------------------------------------------- #
+# Full US state name -> 2-letter code, so the slide's STATE column stays compact
+# when the export gives a full region name (e.g. "Connecticut" -> "CT").
+_STATE_NAME_TO_CODE = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
+    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE",
+    "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+    "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+    "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
+    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+    "vermont": "VT", "virginia": "VA", "washington": "WA",
+    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+    "district of columbia": "DC",
+}
+
+
+def _abbrev_state(region: str) -> str:
+    """Map a region to a 2-letter code when possible, else return it trimmed."""
+    r = (region or "").strip()
+    if r.upper() in _US_STATES:
+        return r.upper()
+    return _STATE_NAME_TO_CODE.get(r.lower(), r)
+
+
 def _split_location(location: str) -> tuple[str, str]:
     """Best-effort split of a location string into (state, city).
 
@@ -287,11 +316,77 @@ def _split_location(location: str) -> tuple[str, str]:
 
 
 def parse_locations(text: str) -> pd.DataFrame:
-    """Parse 'location, machine count' rows.
+    """Parse a locations paste into location / state / city / count rows.
+
+    Supports two layouts, auto-detected:
+
+    1. GEO export (Tableau-style), one row per city (and product), e.g.
+         ip_country | ip_region | ip_city | Measure Names | product_name | Measure Values
+         United States | Connecticut | Bristol | Distinct count of machine_id | LabVIEW | 1
+       Machine counts are summed per (region, city); ip_region becomes the
+       state (abbreviated when it's a US state name).
+
+    2. SIMPLE: location | machine count.
 
     Returns columns: location, state, city, count.
     """
     rows = _split_rows(text)
+    if _is_geo_location_format(rows):
+        return _parse_locations_geo(rows)
+    return _parse_locations_simple(rows)
+
+
+def _is_geo_location_format(rows: list[list[str]]) -> bool:
+    """Geo export has ip_region / ip_city (or a Measure Values column)."""
+    if not rows:
+        return False
+    header = " ".join(c.lower() for c in rows[0])
+    return ("ip_city" in header or "ip_region" in header
+            or ("measure value" in header and "city" in header))
+
+
+def _parse_locations_geo(rows: list[list[str]]) -> pd.DataFrame:
+    """Aggregate a geo export to machines per (region, city)."""
+    header = rows[0]
+    region_i = city_i = value_i = None
+    country_i = None
+    for i, h in enumerate(header):
+        hl = h.lower()
+        if "region" in hl or hl.endswith("state") or hl == "state":
+            region_i = i
+        elif "city" in hl:
+            city_i = i
+        elif "country" in hl:
+            country_i = i
+        elif "measure value" in hl or "(measure)" in hl or "count" in hl:
+            value_i = i
+    if city_i is None:
+        return _parse_locations_simple(rows)
+    if value_i is None:
+        value_i = len(header) - 1  # Measure Values is the last column
+
+    agg: dict[tuple[str, str], int] = {}
+    for cells in rows[1:]:
+        if len(cells) <= max(city_i, value_i):
+            continue
+        region = cells[region_i].strip() if region_i is not None else ""
+        city = cells[city_i].strip()
+        count = _to_number(cells[value_i])
+        if not city or count is None:
+            continue
+        agg[(region, city)] = agg.get((region, city), 0) + int(count)
+
+    records: list[dict] = []
+    for (region, city), count in agg.items():
+        state = _abbrev_state(region)
+        location = f"{city}, {state}" if state else city
+        records.append({"location": location, "state": state, "city": city,
+                        "count": count})
+    return pd.DataFrame(records, columns=["location", "state", "city", "count"])
+
+
+def _parse_locations_simple(rows: list[list[str]]) -> pd.DataFrame:
+    """Simple layout: location | machine count."""
     records: list[dict] = []
     for i, cells in enumerate(rows):
         if len(cells) < 2:

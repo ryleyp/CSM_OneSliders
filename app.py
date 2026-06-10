@@ -66,16 +66,19 @@ with c1:
 
 with c2:
     st.subheader("2. Locations")
-    st.caption("Columns: **Location · Machines**  \n"
-               "e.g. `Austin, TX⇥320`")
+    st.caption("Paste the geo export: **ip_country · ip_region · ip_city · "
+               "Measure Names · product_name · Measure Values**  \n"
+               "Aggregated to machines per city automatically. (A simple "
+               "`Location · Count` table also works.)")
     locations_text = st.text_area("Locations table", height=180,
                                   key="locations_text",
                                   label_visibility="collapsed")
 
 with c3:
     st.subheader("3. Usage Versions")
-    st.caption("Columns: **Product · Version · Users**  \n"
-               "e.g. `LabVIEW⇥2024 Q3⇥540`")
+    st.caption("Paste: **product_name · product_version · Distinct count of "
+               "machine_id**  \n"
+               "e.g. `LabVIEW⇥2021⇥399`")
     versions_text = st.text_area("Usage versions table", height=180,
                                  key="versions_text",
                                  label_visibility="collapsed")
