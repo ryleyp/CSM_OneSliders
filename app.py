@@ -155,6 +155,23 @@ if st.session_state.pop("a_new", False):
     st.session_state["f_phase"] = ph["phase"]
     st.session_state["f_phase_hint"] = ph["hint"]
 
+
+def _recompute_end_phase():
+    """Recompute EA End Date + Phase from the current Start Date + EP Term.
+
+    Runs as a button callback (before widgets are rebuilt) so it can safely
+    update the widget-backed session_state values.
+    """
+    start = dp.parse_date(st.session_state.get("f_start_date", ""))
+    term = dp.parse_term_years(st.session_state.get("f_ep_term", ""))
+    end = dp.compute_end_date(start, term)
+    ph = dp.compute_phase(start, term)
+    if end:
+        st.session_state["f_end_date"] = end.strftime("%d-%b-%Y").upper()
+    st.session_state["f_phase"] = ph["phase"]
+    st.session_state["f_phase_hint"] = ph["hint"]
+
+
 fa1, fa2 = st.columns(2)
 with fa1:
     st.text_input("EA/EP Service ID", key="f_service_id",
@@ -172,17 +189,8 @@ with fa2:
     with cols_e[1]:
         st.write("")
         st.write("")
-        if st.button("↻ Recompute", help="Recompute End Date & Phase from the "
-                     "current Start Date + EP Term"):
-            start = dp.parse_date(st.session_state.get("f_start_date", ""))
-            term = dp.parse_term_years(st.session_state.get("f_ep_term", ""))
-            end = dp.compute_end_date(start, term)
-            ph = dp.compute_phase(start, term)
-            if end:
-                st.session_state["f_end_date"] = end.strftime("%d-%b-%Y").upper()
-            st.session_state["f_phase"] = ph["phase"]
-            st.session_state["f_phase_hint"] = ph["hint"]
-            st.rerun()
+        st.button("↻ Recompute", help="Recompute End Date & Phase from the "
+                  "current Start Date + EP Term", on_click=_recompute_end_phase)
     st.text_input("Phase (computed — editable)", key="f_phase",
                   placeholder="Second Half")
     hint = st.session_state.get("f_phase_hint", "")
