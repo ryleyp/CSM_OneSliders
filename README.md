@@ -34,6 +34,34 @@ a polished 16:9 `.pptx` plus on-page CSM insights.
 
 ---
 
+## Easiest way to run (no command line)
+
+On a **Mac**, you can start everything by double-clicking — no Terminal typing:
+
+1. Make sure **Python 3** is installed (download from
+   [python.org](https://www.python.org/downloads/) if not).
+2. In Finder, open the project folder and **double-click
+   `Start EA Slide Builder.command`**.
+   - The **first** launch does a one-time setup (creates a local environment and
+     installs dependencies) — it takes a minute or two.
+   - After that, every launch is quick.
+3. Your browser opens to the app automatically. The Terminal window that appears
+   shows the address teammates can use (e.g. `http://192.168.1.42:8501`).
+4. **Keep that window open** while using the app. Close it (or press `Ctrl+C`) to
+   stop.
+
+> First time only: if macOS says *"cannot be opened because it is from an
+> unidentified developer,"* **right-click** the file → **Open** → **Open**. You
+> only need to do this once.
+
+For the screenshot OCR feature you still need system Tesseract installed once
+(`brew install tesseract` — see below). Everything else the launcher handles.
+
+The manual steps below do the same thing if you prefer the command line, or are
+on Windows/Linux.
+
+---
+
 ## Setup
 
 ### 1. Install Python dependencies
