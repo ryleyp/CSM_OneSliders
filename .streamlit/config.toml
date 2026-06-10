@@ -6,9 +6,13 @@
 gatherUsageStats = false
 
 [server]
-# Listen on all local interfaces so teammates on your LAN can reach the app at
-# http://<your-PC-ip>:8501  (you can also pass --server.address=0.0.0.0 on launch).
-address = "0.0.0.0"
+# PRIVATE by default: bind to localhost only, so the app is reachable ONLY on
+# this machine (http://localhost:8501). Nothing on your network or the internet
+# can open it — important when entering contract data.
+#
+# To deliberately let teammates on your LAN reach it (NOT recommended for
+# sensitive contract data), launch with: --server.address=0.0.0.0
+address = "127.0.0.1"
 port = 8501
 headless = true
 

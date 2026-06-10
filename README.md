@@ -36,29 +36,25 @@ a polished 16:9 `.pptx` plus on-page CSM insights.
 
 ## Easiest way to run (no command line)
 
-On a **Mac**, you can start everything by double-clicking — no Terminal typing:
+**See [`WALKTHROUGH.md`](WALKTHROUGH.md) for the full step-by-step install &
+run guide for Mac and Windows** — written for non-technical users.
 
-1. Make sure **Python 3** is installed (download from
-   [python.org](https://www.python.org/downloads/) if not).
-2. In Finder, open the project folder and **double-click
-   `Start EA Slide Builder.command`**.
-   - The **first** launch does a one-time setup (creates a local environment and
-     installs dependencies) — it takes a minute or two.
-   - After that, every launch is quick.
-3. Your browser opens to the app automatically. The Terminal window that appears
-   shows the address teammates can use (e.g. `http://192.168.1.42:8501`).
-4. **Keep that window open** while using the app. Close it (or press `Ctrl+C`) to
-   stop.
+The short version: just **double-click the launcher** for your system.
 
-> First time only: if macOS says *"cannot be opened because it is from an
-> unidentified developer,"* **right-click** the file → **Open** → **Open**. You
-> only need to do this once.
+- **Mac:** `Start EA Slide Builder.command`
+- **Windows:** `Start EA Slide Builder.bat`
 
-For the screenshot OCR feature you still need system Tesseract installed once
-(`brew install tesseract` — see below). Everything else the launcher handles.
+The first launch sets up a local environment and installs dependencies (one
+time, a minute or two); after that it opens your browser to the app
+automatically. Keep the window that opens — close it to stop the app. To get
+updates later, double-click **`Update EA Slide Builder`** (`.command` on Mac,
+`.bat` on Windows). You do **not** need to update to use the app.
 
-The manual steps below do the same thing if you prefer the command line, or are
-on Windows/Linux.
+> **Private by default.** The launchers run the app on **localhost only**
+> (`http://localhost:8501`) — reachable from **this machine only**, not your
+> network or the internet. Any contract data you enter stays on your computer.
+
+The manual command-line steps below do the same thing, if you prefer.
 
 ---
 
@@ -94,16 +90,22 @@ you can type the screenshot values into the editable fields manually.
 
 ## Running it
 
-From the project folder:
+From the project folder (private — this machine only):
 
 ```bash
-streamlit run app.py --server.address=0.0.0.0
+streamlit run app.py
 ```
 
-- On your PC, open **http://localhost:8501**.
-- Teammates on the **same local network** open **http://<your-PC-ip>:8501**.
+- Open **http://localhost:8501** on this computer.
+- The app is bound to localhost only, so nothing on your network or the
+  internet can reach it. This is the recommended mode for contract data.
 
-### Find your PC's local IP
+> **Optional, not recommended for contract data:** to deliberately let teammates
+> on your local network open it, launch with `--server.address=0.0.0.0` and they
+> visit `http://<your-PC-ip>:8501`. Only do this on a trusted network, and never
+> expose it to the public internet.
+
+### Find your PC's local IP (only if you opted into network sharing)
 
 - **Windows**: run `ipconfig` and look for the **IPv4 Address** (e.g.
   `192.168.1.42`).
@@ -113,13 +115,15 @@ streamlit run app.py --server.address=0.0.0.0
 
 So if your IP is `192.168.1.42`, teammates go to `http://192.168.1.42:8501`.
 
-### Important: availability & privacy
+### Important: privacy & contract data
 
-- The app is **only reachable while your PC is on and the app is running.** Close
-  the terminal / shut down your PC and it goes away for everyone.
-- It is meant for your **internal local network only**. **Do not** port-forward,
-  tunnel, or otherwise expose it to the public internet.
-- **All data stays in-house.** Nothing you paste or upload leaves your machine.
+- **Default is private** — the app is reachable **only on this machine**. Your
+  data, including any contract info you enter, stays here.
+- **Keep contract data in-house.** Don't post the screenshots or generated
+  slide to public locations; share the finished slide only via approved internal
+  channels.
+- **Never expose it to the public internet** — no port-forwarding or tunneling.
+- The app is **only reachable while your PC is on and the app is running.**
 
 ---
 
