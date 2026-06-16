@@ -266,10 +266,12 @@ text_c = _ocr_once(img_c, "c")
 if st.session_state.pop("c_new", False):
     bundles = sr.parse_unlimited_bundles(text_c)
     st.session_state["bundle_seed"] = pd.DataFrame(
-        {"bundle_name": bundles or []}
+        {"bundle_name": pd.Series(bundles or [], dtype="object")}
     )
 if "bundle_seed" not in st.session_state:
-    st.session_state["bundle_seed"] = pd.DataFrame({"bundle_name": []})
+    st.session_state["bundle_seed"] = pd.DataFrame(
+        {"bundle_name": pd.Series([], dtype="object")}
+    )
 st.caption("One bundle name per row (the name after the colon). Edit/add/remove.")
 bundle_edit = st.data_editor(
     st.session_state["bundle_seed"], num_rows="dynamic", key="bundle_editor",
