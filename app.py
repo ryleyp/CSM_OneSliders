@@ -107,15 +107,19 @@ st.header("Part 2 · Upload screenshots")
 st.warning("OCR is imperfect. **Every** value below is editable — review and "
            "correct everything before generating.")
 
+st.caption("Screenshots B and C are **optional** — skip either one and its "
+           "card is simply left out of the slide. You can also type rows in by "
+           "hand below instead of uploading.")
+
 up1, up2, up3 = st.columns(3)
 with up1:
     img_a = st.file_uploader("Screenshot A — Contract details",
                              type=["png", "jpg", "jpeg", "bmp", "tiff"])
 with up2:
-    img_b = st.file_uploader("Screenshot B — Finite licenses",
+    img_b = st.file_uploader("Screenshot B — Finite licenses (optional)",
                              type=["png", "jpg", "jpeg", "bmp", "tiff"])
 with up3:
-    img_c = st.file_uploader("Screenshot C — Unlimited bundles",
+    img_c = st.file_uploader("Screenshot C — Unlimited bundles (optional)",
                              type=["png", "jpg", "jpeg", "bmp", "tiff"])
 
 
@@ -232,7 +236,7 @@ with st.expander("Raw OCR text — Screenshot A"):
     st.text(text_a or "(no text yet)")
 
 # --- Screenshot B: Finite licenses ----------------------------------------- #
-st.subheader("Screenshot B · Finite licenses")
+st.subheader("Screenshot B · Finite licenses (optional)")
 text_b = _ocr_once(img_b, "b")
 if st.session_state.pop("b_new", False):
     rows = sr.parse_finite_licenses(text_b)
@@ -257,7 +261,7 @@ with st.expander("Raw OCR text — Screenshot B"):
     st.text(text_b or "(no text yet)")
 
 # --- Screenshot C: Unlimited bundles --------------------------------------- #
-st.subheader("Screenshot C · Unlimited bundles")
+st.subheader("Screenshot C · Unlimited bundles (optional)")
 text_c = _ocr_once(img_c, "c")
 if st.session_state.pop("c_new", False):
     bundles = sr.parse_unlimited_bundles(text_c)

@@ -127,6 +127,13 @@ def _card(slide, x, y, w, h, title, *, title_color=ACCENT_GREEN,
     return inner_x, inner_y, inner_w, inner_h
 
 
+def _empty_note(slide, x, y, w, h, text):
+    """A tidy, centered muted placeholder for an optional card with no data."""
+    tb = slide.shapes.add_textbox(x, y, w, h)
+    _set_text(tb, text, size=9, color=GRAY_TEXT, font=SANS,
+              align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+
+
 def _style_table(table):
     """Strip python-pptx's default banded style so our explicit fills win."""
     table.first_row = False
@@ -216,8 +223,7 @@ def _bundle_card(slide, x, y, w, h, data):
     ix, iy, iw, ih = _card(slide, x, y, w, h, "Bundle Information")
     bundles = data.get("bundles", []) or []
     if not bundles:
-        nb = slide.shapes.add_textbox(ix, iy, iw, Inches(0.3))
-        _set_text(nb, "No bundles parsed", size=9, color=GRAY_TEXT)
+        _empty_note(slide, ix, iy, iw, ih, "No bundles provided")
         return
     pill_h = Inches(0.34)
     gap = Inches(0.08)
@@ -233,6 +239,9 @@ def _bundle_card(slide, x, y, w, h, data):
 def _finite_card(slide, x, y, w, h, data):
     ix, iy, iw, ih = _card(slide, x, y, w, h, "NI SW Licenses (Finite Qty)")
     rows = (data.get("finite_licenses", []) or [])[:6]
+    if not rows:
+        _empty_note(slide, ix, iy, iw, ih, "No finite licenses provided")
+        return
     headers = ["QTY", "LICENSE", "TYPE"]
     n_rows = len(rows) + 1
     tbl_shape = slide.shapes.add_table(n_rows, 3, ix, iy, iw, ih)
