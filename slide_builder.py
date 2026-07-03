@@ -24,7 +24,8 @@ from io import BytesIO
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
-from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.chart import XL_CHART_TYPE, XL_MARKER_STYLE
+from pptx.enum.dml import MSO_LINE_DASH_STYLE
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.oxml.ns import qn
@@ -238,10 +239,21 @@ def _bundle_card(slide, x, y, w, h, data):
 
 def _finite_card(slide, x, y, w, h, data):
     ix, iy, iw, ih = _card(slide, x, y, w, h, "NI SW Licenses (Finite Qty)")
-    rows = (data.get("finite_licenses", []) or [])[:6]
-    if not rows:
+    all_rows = data.get("finite_licenses", []) or []
+    if not all_rows:
         _empty_note(slide, ix, iy, iw, ih, "No finite licenses provided")
         return
+    # Fit as many rows as the card height allows (~0.28" per row + header).
+    max_rows = max(3, int(int(ih) / int(Inches(0.28))) - 1)
+    rows = all_rows[:max_rows]
+    truncated = len(all_rows) - len(rows)
+    if truncated:
+        note_h = Inches(0.2)
+        nb = slide.shapes.add_textbox(ix, Emu(int(iy) + int(ih) - int(note_h)),
+                                      iw, note_h)
+        _set_text(nb, f"+{truncated} more not shown", size=7.5,
+                  color=GRAY_TEXT, font=SANS, align=PP_ALIGN.RIGHT)
+        ih = Emu(int(ih) - int(note_h))
     headers = ["QTY", "LICENSE", "TYPE"]
     n_rows = len(rows) + 1
     tbl_shape = slide.shapes.add_table(n_rows, 3, ix, iy, iw, ih)
@@ -285,6 +297,24 @@ def _trend_card(slide, x, y, w, h, data):
     chart_data.categories = periods
     chart_data.add_series("Total Machines", totals)
 
+    # Least-squares linear trend, drawn as a subtle dashed guide line.
+    n = len(totals)
+    trend = None
+    if n >= 3:
+        xs = list(range(n))
+        mean_x = sum(xs) / n
+        mean_y = sum(totals) / n
+        denom = sum((x - mean_x) ** 2 for x in xs) or 1
+        slope = sum((x - mean_x) * (y - mean_y)
+                    for x, y in zip(xs, totals)) / denom
+        trend = [round(mean_y + slope * (x - mean_x), 1) for x in xs]
+        chart_data.add_series("Trend", trend)
+
+    # Peak marker: a one-point series so the max stands out on the line.
+    peak_idx = totals.index(max(totals))
+    chart_data.add_series(
+        "Peak", [t if i == peak_idx else None for i, t in enumerate(totals)])
+
     gframe = slide.shapes.add_chart(XL_CHART_TYPE.LINE, ix, iy, iw, ih,
                                     chart_data)
     chart = gframe.chart
@@ -295,6 +325,23 @@ def _trend_card(slide, x, y, w, h, data):
     series.smooth = False
     series.format.line.color.rgb = ACCENT_GREEN
     series.format.line.width = Pt(2.5)
+
+    all_series = list(chart.plots[0].series)
+    if trend is not None:
+        tser = all_series[1]
+        tser.smooth = False
+        tser.format.line.color.rgb = RGBColor(0xB5, 0xD6, 0xC9)
+        tser.format.line.width = Pt(1.25)
+        tser.format.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+
+    pser = all_series[-1]
+    pser.smooth = False
+    pser.format.line.fill.background()  # no connecting line, marker only
+    pser.marker.style = XL_MARKER_STYLE.CIRCLE
+    pser.marker.size = 8
+    pser.marker.format.fill.solid()
+    pser.marker.format.fill.fore_color.rgb = ACCENT_GREEN
+    pser.marker.format.line.color.rgb = WHITE
 
     val_axis = chart.value_axis
     val_axis.has_major_gridlines = False
@@ -498,13 +545,88 @@ def _fmt(value):
 
 
 # --------------------------------------------------------------------------- #
-# Public entry point
+# Insights slide
 # --------------------------------------------------------------------------- #
-def build_slide(data: dict) -> BytesIO:
-    """Build the one-slider and return it as an in-memory .pptx (BytesIO)."""
-    prs = Presentation()
-    prs.slide_width = SLIDE_W
-    prs.slide_height = SLIDE_H
+_PRIORITY_LABELS = {1: "HIGH", 2: "MEDIUM", 3: "GOOD", 4: "CONTEXT"}
+_PRIORITY_COLORS = {
+    1: RGBColor(0xC0, 0x3A, 0x2B),   # muted red
+    2: RGBColor(0xC8, 0x8A, 0x1E),   # amber
+    3: ACCENT_GREEN,
+    4: DARK_GREEN,
+}
+
+
+def _add_insights_slide(prs, data: dict, insights: list[dict]) -> None:
+    """A second slide listing the prioritized CSM insights."""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    bg = _rect(slide, 0, 0, SLIDE_W, SLIDE_H, fill=WHITE, rounded=False)
+    bg.line.fill.background()
+
+    # Header band, matching the main slide.
+    band_h = Inches(0.92)
+    _rect(slide, 0, 0, SLIDE_W, band_h, fill=DARK_GREEN, rounded=False)
+    pad = Inches(0.35)
+    tb = slide.shapes.add_textbox(pad, Inches(0.12), Inches(8), Inches(0.24))
+    _set_text(tb, "CSM INSIGHTS", size=8.5, bold=True, color=MUTED_GREEN,
+              font=SANS, spacing=200)
+    sid = data.get("service_id") or "EA-—"
+    cust = data.get("customer") or "Customer"
+    tb2 = slide.shapes.add_textbox(pad, Inches(0.36), Inches(10), Inches(0.5))
+    tf = tb2.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    for txt in (sid, "  ·  ", cust):
+        r = p.add_run()
+        r.text = txt
+        r.font.size = Pt(22)
+        r.font.bold = True
+        r.font.name = SERIF
+        r.font.color.rgb = WHITE
+
+    # Insight rows: priority chip + category + text, alternating tint.
+    x = Inches(0.35)
+    w = SLIDE_W - Inches(0.7)
+    y = Inches(1.15)
+    row_h = Inches(0.92)
+    gap = Inches(0.1)
+    for i, ins in enumerate(insights[:6]):
+        fill = LIGHT_TINT if i % 2 == 0 else WHITE
+        _rect(slide, x, y, w, row_h, fill=fill, line=CARD_BORDER,
+              line_w=Pt(0.75))
+        prio = int(ins.get("priority", 4))
+        chip_w = Inches(1.0)
+        chip = _rect(slide, x + Inches(0.12), y + Inches(0.3), chip_w,
+                     Inches(0.32), fill=_PRIORITY_COLORS.get(prio, DARK_GREEN),
+                     line=None)
+        _set_text(chip, _PRIORITY_LABELS.get(prio, ""), size=8.5, bold=True,
+                  color=WHITE, font=SANS, align=PP_ALIGN.CENTER,
+                  anchor=MSO_ANCHOR.MIDDLE, spacing=120)
+        body = slide.shapes.add_textbox(x + Inches(1.3), y + Inches(0.06),
+                                        w - Inches(1.45), row_h - Inches(0.12))
+        btf = body.text_frame
+        btf.word_wrap = True
+        btf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p1 = btf.paragraphs[0]
+        r1 = p1.add_run()
+        r1.text = str(ins.get("category", "")).upper()
+        r1.font.size = Pt(8.5)
+        r1.font.bold = True
+        r1.font.name = SANS
+        r1.font.color.rgb = ACCENT_GREEN
+        p2 = btf.add_paragraph()
+        r2 = p2.add_run()
+        r2.text = str(ins.get("text", ""))
+        r2.font.size = Pt(9.5)
+        r2.font.name = SANS
+        r2.font.color.rgb = DARK_GREEN
+        y = Emu(int(y) + int(row_h) + int(gap))
+
+
+# --------------------------------------------------------------------------- #
+# Public entry points
+# --------------------------------------------------------------------------- #
+def _add_ea_slide(prs, data: dict) -> None:
+    """Render one EA one-slider onto a new slide of `prs`."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank layout
 
     # White background.
@@ -520,21 +642,38 @@ def build_slide(data: dict) -> BytesIO:
     col_w = Emu(int(col_w))
     top = Inches(1.08)
     card_gap = Inches(0.12)
+    col_h = Emu(int(SLIDE_H) - int(top) - int(Inches(0.26)))  # usable height
 
     left_x = margin
     center_x = Emu(int(margin) + int(col_w) + int(gap))
     right_x = Emu(int(margin) + 2 * int(col_w) + 2 * int(gap))
 
-    # --- LEFT column ---
+    # --- LEFT column (adaptive: skipped bundle/finite cards free their space) ---
+    bundles = data.get("bundles", []) or []
+    finite = data.get("finite_licenses", []) or []
+
     y = top
     h1 = Inches(1.68)
     _contract_details_card(slide, left_x, y, col_w, h1, data)
     y = Emu(int(y) + int(h1) + int(card_gap))
-    h2 = Inches(1.6)
-    _bundle_card(slide, left_x, y, col_w, h2, data)
-    y = Emu(int(y) + int(h2) + int(card_gap))
-    h3 = Inches(2.68)
-    _finite_card(slide, left_x, y, col_w, h3, data)
+    remaining = Emu(int(col_h) - int(h1) - int(card_gap))
+
+    if bundles and finite:
+        # Bundle card sized to its pill count, finite table takes the rest.
+        need = Inches(0.5 + 0.42 * min(len(bundles), 4))
+        h2 = Emu(max(int(Inches(1.0)), min(int(need), int(Inches(2.2)))))
+        _bundle_card(slide, left_x, y, col_w, h2, data)
+        y = Emu(int(y) + int(h2) + int(card_gap))
+        h3 = Emu(int(remaining) - int(h2) - int(card_gap))
+        _finite_card(slide, left_x, y, col_w, h3, data)
+    elif finite:
+        _finite_card(slide, left_x, y, col_w, remaining, data)
+    elif bundles:
+        _bundle_card(slide, left_x, y, col_w, remaining, data)
+    else:
+        ix, iy, iw, ih = _card(slide, left_x, y, col_w, remaining,
+                               "Licenses & Bundles")
+        _empty_note(slide, ix, iy, iw, ih, "No license or bundle data provided")
 
     # --- CENTER column ---
     y = top
@@ -558,6 +697,35 @@ def build_slide(data: dict) -> BytesIO:
     hr4 = Inches(0.86)
     _support_card(slide, right_x, y, col_w, hr4, data)
 
+
+def _new_presentation():
+    prs = Presentation()
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+    return prs
+
+
+def build_slide(data: dict, insights: list[dict] | None = None) -> BytesIO:
+    """Build the one-slider (plus an optional insights slide) as a .pptx."""
+    prs = _new_presentation()
+    _add_ea_slide(prs, data)
+    if insights:
+        _add_insights_slide(prs, data, insights)
+    buf = BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def build_deck(accounts: list[tuple[dict, list[dict] | None]]) -> BytesIO:
+    """Build one deck with a slide (plus optional insights slide) per account.
+
+    `accounts` is a list of (data, insights-or-None) tuples."""
+    prs = _new_presentation()
+    for data, insights in accounts:
+        _add_ea_slide(prs, data)
+        if insights:
+            _add_insights_slide(prs, data, insights)
     buf = BytesIO()
     prs.save(buf)
     buf.seek(0)

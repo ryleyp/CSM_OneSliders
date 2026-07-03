@@ -14,14 +14,27 @@ a polished 16:9 `.pptx` plus on-page CSM insights.
 
 ## What it does
 
+- **Account profiles** — save everything you've entered for an account to a
+  local JSON file; load it next quarter, paste fresh tables, regenerate.
+  **Batch mode** builds one deck with a slide per saved account. Profiles
+  contain contract data, so they live only in the local `profiles/` folder
+  (git-ignored — they never leave the machine).
+- **On-page slide preview** — a faithful preview of the slide renders on the
+  page after Generate, so you can adjust and regenerate before downloading.
+- **CSM Insights slide** — optionally include the prioritized insights as a
+  second slide in the .pptx (on by default).
+- **System check** — an expander at the top shows Python/package versions and
+  whether Tesseract is installed, for easy troubleshooting.
 - **Part 1 — Paste tables** (tab-separated, copied straight from Excel):
   1. **Machine Count** — New & Existing machines over time (period, new, existing)
   2. **Locations** — location and machine count
   3. **Usage Versions** — product, version, user count
-- **Part 2 — Upload three screenshots**, read locally with OCR (Tesseract via
-  `pytesseract`). Parsing is intentionally tolerant, and **every** parsed value
-  lands in an **editable field you review and correct** before generating. OCR
-  is imperfect — this review step is mandatory.
+- **Part 2 — Upload screenshots** (B and C optional), read locally with OCR
+  (Tesseract via `pytesseract`, with automatic image preprocessing). Each
+  screenshot shows **side-by-side** with its fields, low-confidence values are
+  flagged for review, and **every** parsed value lands in an **editable field
+  you review and correct** before generating. OCR is imperfect — this review
+  step is mandatory.
   - **Screenshot A — Contract details**: EA/EP Service ID, customer, start date,
     EP term, FLEX credits, support level, debug licenses. The app **computes a
     suggested EA End Date** (Start Date + EP Term) and the **Phase** (Not
@@ -142,10 +155,25 @@ All parsing, OCR, slide building, and insight generation happen locally.
 | --- | --- |
 | `app.py` | Streamlit UI (the one page; orchestrates everything) |
 | `data_processor.py` | Parse the pasted tables + the three computations + contract date/phase math |
-| `screenshot_reader.py` | Per-screenshot OCR parsers (A: contract, B: finite, C: bundles) |
-| `slide_builder.py` | Build the 16:9 `.pptx` to the reference visual design |
+| `screenshot_reader.py` | OCR (preprocessing + confidence) and per-screenshot parsers |
+| `slide_builder.py` | Build the 16:9 `.pptx` (adaptive layout, trendline, insights slide, batch decks) |
+| `preview.py` | On-page HTML preview of the slide |
 | `insights.py` | Local CSM insight generation (no LLM) |
-| `.streamlit/config.toml` | Local server + telemetry-off config |
+| `profiles.py` | Save/load local account profiles (JSON in `profiles/`, git-ignored) |
+| `tests/run_all.py` | Self-test — run `python -m tests.run_all` |
+| `packaging/` | Optional PyInstaller .exe build (see `packaging/BUILD_EXE.md`) |
+| `.streamlit/config.toml` | Private localhost + telemetry-off config |
+
+## Self-test
+
+With the venv active, from the project folder:
+
+```bash
+python -m tests.run_all
+```
+
+Exercises the parsers, date/phase math, slide/deck builders, profiles, the
+preview, and the full Streamlit app (including the Generate path).
 
 ---
 
