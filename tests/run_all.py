@@ -282,6 +282,16 @@ def test_github_pages_lite_security():
           (vendor / "tesseract" / "worker.min.js").is_file())
     check("pages lite vendors English OCR data",
           (vendor / "tesseract" / "lang" / "eng.traineddata.gz").is_file())
+    core = vendor / "tesseract" / "core"
+    for core_name in (
+        "tesseract-core.wasm.js",
+        "tesseract-core-lstm.wasm.js",
+        "tesseract-core-simd.wasm.js",
+        "tesseract-core-simd-lstm.wasm.js",
+        "tesseract-core-relaxedsimd.wasm.js",
+        "tesseract-core-relaxedsimd-lstm.wasm.js",
+    ):
+        check(f"pages lite vendors {core_name}", (core / core_name).is_file())
 
 
 # --------------------------------------------------------------------------- #
