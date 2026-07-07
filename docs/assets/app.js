@@ -478,18 +478,50 @@
     }).filter(Boolean);
   }
 
+  function cleanOcrLines(text) {
+    return String(text || '').split(/\r?\n/)
+      .map((line) => cleanOcrLine(line))
+      .filter(Boolean);
+  }
+
+  function parseFiniteLicensesColumns(leftText, rightText) {
+    const leftRows = cleanOcrLines(leftText).map((line) => {
+      if (/finite\s+quantity|quantity\s+and\s+license|software\s+licenses/i.test(line)) return null;
+      const match = line.match(/^(\d[\d,]*)\s+(.+)$/);
+      if (!match) return null;
+      return {
+        count: Math.trunc(toNumber(match[1]) || 0),
+        license_type: match[2].trim()
+      };
+    }).filter(Boolean);
+
+    const names = cleanOcrLines(rightText).filter((line) => {
+      if (/software\s+title|software\s+licenses|finite\s+quantity|quantity\s+and\s+license/i.test(line)) return false;
+      if (/shall\s+be|unlimited\s+quantity|pricing\s+for/i.test(line)) return false;
+      if (!/[A-Za-z]{3}/.test(line)) return false;
+      return line.length >= 3;
+    });
+
+    if (!leftRows.length || !names.length) return [];
+    return leftRows.map((row, i) => ({
+      count: row.count,
+      license_type: row.license_type,
+      license_name: names[i] || ''
+    })).filter((row) => row.license_name || row.license_type);
+  }
+
   function parseUnlimitedBundlesOcr(text) {
     const bundles = [];
     String(text || '').split(/\r?\n/).forEach((raw) => {
       const line = cleanOcrLine(raw);
       if (!line || /unlimited\s+quantity/i.test(line)) return;
-      let match = line.match(/(?:bundle\s*title|title)\s*[:\-]\s*(.+)$/i);
+      let match = line.match(/(?:bundle\s*tit(?:le|ie|1e)|title)\s*[:\-]\s*(.+)$/i);
       if (match && match[1].trim()) {
         bundles.push(match[1].trim());
         return;
       }
       if (line.includes(':') && /bundle/i.test(line)) {
-        const name = line.split(/:(.*)/)[1].trim();
+        const name = line.slice(line.indexOf(':') + 1).trim();
         if (name && !/unlimited\s+quantity/i.test(name)) bundles.push(name);
       }
     });
@@ -500,6 +532,10 @@
       seen.add(key);
       return true;
     });
+  }
+
+  function parseUnlimitedBundlesColumns(_leftText, rightText) {
+    return parseUnlimitedBundlesOcr(rightText);
   }
 
   function extractOcrWords(data) {
@@ -779,30 +815,253 @@
     reader.readAsDataURL(file);
   }
 
-  function imageToCanvas(dataUrl) {
+  function loadImageElement(dataUrl) {
     return new Promise((resolve, reject) => {
       const image = new Image();
-      image.onload = () => {
-        const scale = image.width < 1500 ? Math.min(3, 1500 / Math.max(image.width, 1)) : 1;
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(image.width * scale);
-        canvas.height = Math.round(image.height * scale);
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        for (let i = 0; i < img.data.length; i += 4) {
-          const gray = Math.round(img.data[i] * 0.299 + img.data[i + 1] * 0.587 + img.data[i + 2] * 0.114);
-          const boosted = Math.max(0, Math.min(255, (gray - 128) * 1.18 + 128));
-          img.data[i] = boosted;
-          img.data[i + 1] = boosted;
-          img.data[i + 2] = boosted;
-        }
-        ctx.putImageData(img, 0, 0);
-        resolve(canvas);
-      };
+      image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('Could not load image for OCR.'));
       image.src = dataUrl;
     });
+  }
+
+  function imageToCanvas(dataUrl) {
+    return loadImageElement(dataUrl).then((image) => {
+      const scale = image.width < 2200 ? Math.min(4, 2200 / Math.max(image.width, 1)) : 1.25;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(image.width * scale);
+      canvas.height = Math.round(image.height * scale);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < img.data.length; i += 4) {
+        const gray = Math.round(img.data[i] * 0.299 + img.data[i + 1] * 0.587 + img.data[i + 2] * 0.114);
+        const boosted = Math.max(0, Math.min(255, (gray - 128) * 1.22 + 128));
+        img.data[i] = boosted;
+        img.data[i + 1] = boosted;
+        img.data[i + 2] = boosted;
+      }
+      ctx.putImageData(img, 0, 0);
+      return canvas;
+    });
+  }
+
+  function clustersFromFlags(flags) {
+    const clusters = [];
+    let start = null;
+    flags.forEach((flag, i) => {
+      if (flag && start === null) start = i;
+      if ((!flag || i === flags.length - 1) && start !== null) {
+        const end = flag && i === flags.length - 1 ? i : i - 1;
+        clusters.push({ start, end, center: Math.round((start + end) / 2), size: end - start + 1 });
+        start = null;
+      }
+    });
+    return clusters;
+  }
+
+  function imageDataAtNaturalSize(image) {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  }
+
+  function grayFromData(data, idx) {
+    return Math.round(data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114);
+  }
+
+  function contentBounds(imageData, threshold = 235) {
+    const { data, width, height } = imageData;
+    let minX = width, minY = height, maxX = 0, maxY = 0;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const i = (y * width + x) * 4;
+        if (grayFromData(data, i) < threshold && data[i + 3] > 10) {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+    if (minX > maxX || minY > maxY) return { x: 0, y: 0, w: width, h: height };
+    const pad = 8;
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(width - 1, maxX + pad);
+    maxY = Math.min(height - 1, maxY + pad);
+    return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  }
+
+  function detectTableGeometry(image) {
+    const imageData = imageDataAtNaturalSize(image);
+    const { data, width, height } = imageData;
+    const box = contentBounds(imageData);
+    const rowFlags = [];
+    for (let y = box.y; y < box.y + box.h; y += 1) {
+      let dark = 0;
+      for (let x = box.x; x < box.x + box.w; x += 1) {
+        if (grayFromData(data, (y * width + x) * 4) < 150) dark += 1;
+      }
+      rowFlags.push(dark > box.w * 0.42);
+    }
+    const rowClusters = clustersFromFlags(rowFlags).map((c) => ({
+      start: c.start + box.y,
+      end: c.end + box.y,
+      center: c.center + box.y,
+      size: c.size
+    }));
+    if (rowClusters.length < 3) return null;
+
+    const tableY0 = Math.max(0, rowClusters[0].start - 4);
+    const tableY1 = Math.min(height - 1, rowClusters[rowClusters.length - 1].end + 4);
+    const tableH = Math.max(1, tableY1 - tableY0 + 1);
+    const colFlags = [];
+    for (let x = box.x; x < box.x + box.w; x += 1) {
+      let dark = 0;
+      for (let y = tableY0; y <= tableY1; y += 1) {
+        if (grayFromData(data, (y * width + x) * 4) < 150) dark += 1;
+      }
+      colFlags.push(dark > tableH * 0.42);
+    }
+    const colClusters = clustersFromFlags(colFlags).map((c) => ({
+      start: c.start + box.x,
+      end: c.end + box.x,
+      center: c.center + box.x,
+      size: c.size
+    }));
+
+    let leftX = box.x;
+    let rightX = box.x + box.w - 1;
+    let splitX = box.x + Math.round(box.w / 2);
+    if (colClusters.length >= 3) {
+      leftX = colClusters[0].center;
+      rightX = colClusters[colClusters.length - 1].center;
+      const mid = (leftX + rightX) / 2;
+      splitX = colClusters.slice(1, -1).reduce((best, c) => (
+        Math.abs(c.center - mid) < Math.abs(best.center - mid) ? c : best
+      ), colClusters[1]).center;
+    }
+    if (splitX - leftX < 80 || rightX - splitX < 80) return null;
+    return { leftX, splitX, rightX, y0: tableY0, y1: tableY1 };
+  }
+
+  function removeLongLines(img, width, height) {
+    const data = img.data;
+    const rowLines = [];
+    const colLines = [];
+    for (let y = 0; y < height; y += 1) {
+      let dark = 0;
+      for (let x = 0; x < width; x += 1) if (data[(y * width + x) * 4] < 128) dark += 1;
+      if (dark > width * 0.55) rowLines.push(y);
+    }
+    for (let x = 0; x < width; x += 1) {
+      let dark = 0;
+      for (let y = 0; y < height; y += 1) if (data[(y * width + x) * 4] < 128) dark += 1;
+      if (dark > height * 0.55) colLines.push(x);
+    }
+    rowLines.forEach((row) => {
+      for (let y = Math.max(0, row - 1); y <= Math.min(height - 1, row + 1); y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const i = (y * width + x) * 4;
+          data[i] = 255; data[i + 1] = 255; data[i + 2] = 255;
+        }
+      }
+    });
+    colLines.forEach((col) => {
+      for (let x = Math.max(0, col - 1); x <= Math.min(width - 1, col + 1); x += 1) {
+        for (let y = 0; y < height; y += 1) {
+          const i = (y * width + x) * 4;
+          data[i] = 255; data[i + 1] = 255; data[i + 2] = 255;
+        }
+      }
+    });
+  }
+
+  function preprocessCrop(image, crop, options = {}) {
+    const targetWidth = options.targetWidth || 1800;
+    const scale = Math.min(5, Math.max(2.5, targetWidth / Math.max(crop.w, 1)));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(crop.w * scale);
+    canvas.height = Math.round(crop.h * scale);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const threshold = options.threshold || 210;
+    for (let i = 0; i < img.data.length; i += 4) {
+      const value = grayFromData(img.data, i) < threshold ? 0 : 255;
+      img.data[i] = value;
+      img.data[i + 1] = value;
+      img.data[i + 2] = value;
+      img.data[i + 3] = 255;
+    }
+    if (options.removeLines) removeLongLines(img, canvas.width, canvas.height);
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+  }
+
+  async function tableColumnCanvases(dataUrl) {
+    const image = await loadImageElement(dataUrl);
+    const geom = detectTableGeometry(image);
+    if (!geom) return null;
+    const pad = 6;
+    const imgH = image.naturalHeight || image.height;
+    const y = Math.max(0, geom.y0 - pad);
+    const h = Math.min(imgH, geom.y1 + pad) - y;
+    const left = {
+      x: Math.max(0, geom.leftX + pad),
+      y,
+      w: Math.max(1, geom.splitX - geom.leftX - 2 * pad),
+      h
+    };
+    const right = {
+      x: Math.max(0, geom.splitX + pad),
+      y,
+      w: Math.max(1, geom.rightX - geom.splitX - 2 * pad),
+      h
+    };
+    return {
+      left: preprocessCrop(image, left, { targetWidth: 1900, threshold: 210, removeLines: true }),
+      right: preprocessCrop(image, right, { targetWidth: 2100, threshold: 210, removeLines: true })
+    };
+  }
+
+  async function recognizeCanvas(worker, canvas, psm = '6') {
+    await worker.setParameters({
+      preserve_interword_spaces: '1',
+      tessedit_pageseg_mode: String(psm),
+      user_defined_dpi: '300'
+    });
+    const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
+    return {
+      text: result.data.text || '',
+      words: extractOcrWords(result.data)
+    };
+  }
+
+  async function recognizeShot(key, shot, worker) {
+    if (key === 'b' || key === 'c') {
+      const columns = await tableColumnCanvases(shot.dataUrl);
+      if (columns) {
+        setOcrStatus(key, 'OCR table left column');
+        const left = await recognizeCanvas(worker, columns.left, '6');
+        setOcrStatus(key, 'OCR table right column');
+        const right = await recognizeCanvas(worker, columns.right, '6');
+        return {
+          text: `LEFT COLUMN\n${left.text.trim()}\n\nRIGHT COLUMN\n${right.text.trim()}`.trim(),
+          words: [...left.words, ...right.words],
+          leftText: left.text,
+          rightText: right.text,
+          tableMode: true
+        };
+      }
+    }
+    const canvas = await imageToCanvas(shot.dataUrl);
+    return recognizeCanvas(worker, canvas, key === 'a' ? '6' : '11');
   }
 
   async function getOcrWorker(activeKey) {
@@ -872,10 +1131,13 @@
   }
 
   function applyFiniteOcr(detail) {
-    const parsed = parseFiniteLicensesOcr(detail.text);
+    let parsed = detail.leftText || detail.rightText
+      ? parseFiniteLicensesColumns(detail.leftText || '', detail.rightText || '')
+      : parseFiniteLicensesOcr(detail.text);
+    if (!parsed.length) parsed = parseFiniteLicensesOcr(detail.text);
     if (parsed.length) {
       $('finiteText').value = parsed.map((r) => `${r.count}\t${r.license_type}\t${r.license_name}`).join('\n');
-      setOcrStatus('b', `OCR applied ${parsed.length} row${parsed.length === 1 ? '' : 's'}`);
+      setOcrStatus('b', `OCR applied ${parsed.length} row${parsed.length === 1 ? '' : 's'}${detail.tableMode ? ' from table columns' : ''}`);
     } else {
       setOcrStatus('b', 'OCR finished; no finite rows found');
     }
@@ -883,10 +1145,13 @@
   }
 
   function applyBundleOcr(detail) {
-    const parsed = parseUnlimitedBundlesOcr(detail.text);
+    let parsed = detail.leftText || detail.rightText
+      ? parseUnlimitedBundlesColumns(detail.leftText || '', detail.rightText || '')
+      : parseUnlimitedBundlesOcr(detail.text);
+    if (!parsed.length) parsed = parseUnlimitedBundlesOcr(detail.text);
     if (parsed.length) {
       $('bundleText').value = parsed.join('\n');
-      setOcrStatus('c', `OCR applied ${parsed.length} bundle${parsed.length === 1 ? '' : 's'}`);
+      setOcrStatus('c', `OCR applied ${parsed.length} bundle${parsed.length === 1 ? '' : 's'}${detail.tableMode ? ' from table columns' : ''}`);
     } else {
       setOcrStatus('c', 'OCR finished; no bundles found');
     }
@@ -902,13 +1167,8 @@
     }
     setOcrStatus(key, 'Preparing image');
     try {
-      const canvas = await imageToCanvas(shot.dataUrl);
       const worker = await getOcrWorker(key);
-      const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
-      const detail = {
-        text: result.data.text || '',
-        words: extractOcrWords(result.data)
-      };
+      const detail = await recognizeShot(key, shot, worker);
       if ($(meta.rawId)) $(meta.rawId).value = detail.text;
       if (key === 'a') applyContractOcr(detail);
       else if (key === 'b') applyFiniteOcr(detail);
