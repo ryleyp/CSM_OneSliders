@@ -19,7 +19,7 @@ import re
 
 try:
     import pytesseract
-    from PIL import Image
+    from PIL import Image, ImageOps
     _OCR_AVAILABLE = True
 except Exception:  # pragma: no cover - import guard
     _OCR_AVAILABLE = False
@@ -28,27 +28,85 @@ except Exception:  # pragma: no cover - import guard
 # --------------------------------------------------------------------------- #
 # OCR entry point
 # --------------------------------------------------------------------------- #
+def _preprocess(img):
+    """Light, safe preprocessing that reliably helps Tesseract on screenshots:
+    grayscale, upscale small captures, and normalize contrast. Deliberately no
+    hard thresholding — it can destroy anti-aliased UI text."""
+    if img.mode != "L":
+        img = img.convert("L")
+    # Screenshots of dialogs are often small; Tesseract wants ~300dpi-ish text.
+    if img.width < 1500:
+        scale = min(3.0, 1500 / img.width)
+        img = img.resize((int(img.width * scale), int(img.height * scale)),
+                         Image.LANCZOS)
+    return ImageOps.autocontrast(img)
+
+
 def ocr_image(image_file) -> str:
     """Run Tesseract on an uploaded image and return raw text.
 
     `image_file` is anything PIL can open (a path or a Streamlit UploadedFile).
     Returns '' and never raises on a missing/broken Tesseract install.
     """
+    return ocr_image_detailed(image_file)["text"]
+
+
+def ocr_image_detailed(image_file) -> dict:
+    """OCR with word-level confidence.
+
+    Returns {"text": str, "words": [{"text": str, "conf": float}, ...]}.
+    Words with conf -1 (layout artifacts) are dropped. Raises RuntimeError with
+    a friendly message when Tesseract isn't installed; returns empty results on
+    any other failure.
+    """
+    empty = {"text": "", "words": []}
     if not _OCR_AVAILABLE:
-        return ""
+        return empty
     try:
-        img = Image.open(image_file)
-        # Grayscale tends to help Tesseract on screenshots.
-        if img.mode != "L":
-            img = img.convert("L")
-        return pytesseract.image_to_string(img)
+        img = _preprocess(Image.open(image_file))
+        text = pytesseract.image_to_string(img)
+        words: list[dict] = []
+        try:
+            data = pytesseract.image_to_data(
+                img, output_type=pytesseract.Output.DICT)
+            for w, c in zip(data.get("text", []), data.get("conf", [])):
+                w = (w or "").strip()
+                conf = float(c)
+                if w and conf >= 0:
+                    words.append({"text": w, "conf": conf})
+        except Exception:
+            pass  # confidence is best-effort; the text is what matters
+        return {"text": text, "words": words}
     except pytesseract.TesseractNotFoundError:
         raise RuntimeError(
             "Tesseract OCR is not installed on this machine. Install the system "
             "Tesseract package (see README) and try again."
         )
     except Exception:
-        return ""
+        return empty
+
+
+def field_confidence(words: list[dict], value: str) -> float | None:
+    """Average OCR confidence of the words that make up a parsed value.
+
+    Returns None when the value is empty or none of its tokens were found in
+    the OCR word list (e.g. the value was computed rather than read)."""
+    if not value or not words:
+        return None
+    tokens = [t for t in re.split(r"[\s,]+", str(value)) if len(t) >= 2]
+    if not tokens:
+        return None
+    confs: list[float] = []
+    lookup = {}
+    for w in words:
+        lookup.setdefault(w["text"].lower().strip(".,:;"), []).append(w["conf"])
+    for tok in tokens:
+        vals = lookup.get(tok.lower().strip(".,:;"))
+        if vals:
+            confs.append(max(vals))
+    if not confs:
+        return None
+    return sum(confs) / len(confs)
 
 
 def _clean(line: str) -> str:

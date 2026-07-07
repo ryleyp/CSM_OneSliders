@@ -10,6 +10,21 @@ cd /d "%~dp0"
 echo Checking for updates to EA Slide Builder...
 echo.
 
+if not exist ".git\" (
+  echo This folder is a ZIP download, not a Git copy, so it cannot self-update.
+  echo ^(The tell-tale sign: the folder name contains "CSM_OneSliders-claude-...".^)
+  echo.
+  echo To get updates, make a one-time Git copy instead:
+  echo   1. Open PowerShell
+  echo   2. cd %%USERPROFILE%%
+  echo   3. git clone https://github.com/ryleyp/CSM_OneSliders.git EA
+  echo   4. Use the EA folder from now on ^(and delete this one^).
+  echo.
+  echo The app itself still works from this folder - it just won't update.
+  pause
+  exit /b 1
+)
+
 where git >nul 2>nul
 if errorlevel 1 (
   echo Git is not installed, so automatic updates aren't available.

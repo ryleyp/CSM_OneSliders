@@ -1,29 +1,37 @@
 """app.py — ea-slide-builder (Streamlit UI)
 
-A single-page, local-only tool that turns pasted Excel tables + three contract
-screenshots into a polished 16:9 EA one-slider (.pptx) plus on-page CSM insights.
+A single-page, local-only tool that turns pasted BI tables + three contract
+screenshots into a polished 16:9 EA one-slider (.pptx) plus on-page CSM
+insights.
 
 Runs entirely on the user's PC. No outbound network calls, no telemetry (see
-.streamlit/config.toml). Teammates reach it over the LAN at
-http://<your-PC-ip>:8501 while the app is running.
+.streamlit/config.toml). Bound to localhost by default — private to this
+machine.
 
 Flow (top to bottom):
-  PART 1 — paste three tab-separated tables (machine count, locations, versions)
-  PART 2 — upload three screenshots; OCR fills EDITABLE fields the user reviews
-  PART 3 — Generate Slide: download the .pptx and read the CSM insights
+  Profiles — save/load everything entered for an account; batch-generate decks
+  PART 1  — paste three tab-separated tables (machine count, locations, versions)
+  PART 2  — upload screenshots; OCR fills EDITABLE fields the user reviews
+  PART 3  — Generate: on-page preview, .pptx download, CSM insights
 """
 
 from __future__ import annotations
 
+import platform
+import shutil
+import sys
 from datetime import date
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 import data_processor as dp
+import profiles as prof
 import screenshot_reader as sr
 from insights import generate_insights
-from slide_builder import build_slide
+from preview import generate_preview_html
+from slide_builder import build_deck, build_slide
 
 st.set_page_config(page_title="EA Slide Builder", page_icon="📊",
                    layout="wide")
@@ -34,7 +42,7 @@ st.set_page_config(page_title="EA Slide Builder", page_icon="📊",
 st.title("📊 EA Slide Builder")
 st.caption(
     "Runs **fully offline** on this PC — no internet, no telemetry, no external "
-    "APIs. Paste your tables, upload the three screenshots, review every parsed "
+    "APIs. Paste your tables, upload the screenshots, review every parsed "
     "value, then generate the one-slider."
 )
 
@@ -45,6 +53,157 @@ def _file_id(uploaded) -> str | None:
         return None
     return f"{uploaded.name}:{uploaded.size}"
 
+
+def _editor_nonce() -> int:
+    return st.session_state.setdefault("editor_nonce", 0)
+
+
+def _bump_editor_nonce() -> None:
+    """Change the data_editor keys so they reload their seed DataFrames."""
+    st.session_state["editor_nonce"] = _editor_nonce() + 1
+
+
+# --------------------------------------------------------------------------- #
+# System self-check
+# --------------------------------------------------------------------------- #
+with st.expander("🔧 System check", expanded=False):
+    import pptx as _pptx
+    import PIL as _pil
+    tess_path = shutil.which("tesseract")
+    tess_status = f"found at {tess_path}" if tess_path else \
+        "NOT FOUND — screenshot OCR disabled (fields can be typed manually)"
+    st.markdown(
+        f"- Python **{platform.python_version()}** ({sys.executable})\n"
+        f"- Streamlit **{st.__version__}** · pandas **{pd.__version__}** · "
+        f"python-pptx **{_pptx.__version__}** · Pillow **{_pil.__version__}**\n"
+        f"- Tesseract OCR: **{tess_status}**\n"
+        f"- Platform: {platform.platform()}\n"
+        f"- Profiles folder: `{prof.PROFILES_DIR}`"
+    )
+
+# --------------------------------------------------------------------------- #
+# Profiles — save / load / batch
+# --------------------------------------------------------------------------- #
+def _apply_profile(name: str) -> None:
+    """Button callback: load a profile into the widgets (runs pre-widget,
+    so writing widget-backed session_state keys is allowed)."""
+    payload = prof.load_profile(name)
+    if not payload:
+        st.session_state["profile_msg"] = ("error", f"Could not load '{name}'.")
+        return
+    for k, v in payload["texts"].items():
+        st.session_state[k] = v
+    for k, v in payload["fields"].items():
+        st.session_state[k] = v
+    st.session_state["finite_seed"] = pd.DataFrame(
+        payload["finite_licenses"] or [],
+        columns=["count", "license_type", "license_name"])
+    st.session_state["bundle_seed"] = pd.DataFrame(
+        {"bundle_name": pd.Series(payload["bundles"] or [], dtype="object")})
+    _bump_editor_nonce()
+    st.session_state["profile_msg"] = ("success", f"Loaded profile '{name}'.")
+
+
+def _delete_profile(name: str) -> None:
+    if prof.delete_profile(name):
+        st.session_state["profile_msg"] = ("success", f"Deleted '{name}'.")
+    else:
+        st.session_state["profile_msg"] = ("error", f"'{name}' not found.")
+
+
+def _data_from_profile(payload: dict) -> dict:
+    """Assemble the slide-data dict from a saved profile (for batch mode)."""
+    texts = payload.get("texts", {})
+    fields = payload.get("fields", {})
+    machine_df = dp.parse_machine_count(texts.get("machine_text", ""))
+    locations_df = dp.parse_locations(texts.get("locations_text", ""))
+    versions_df = dp.parse_usage_versions(texts.get("versions_text", ""))
+    purchased_n = dp._to_number(fields.get("f_flex_purchased", ""))
+    used_n = dp._to_number(fields.get("f_flex_used", ""))
+    pct_used = (round(used_n / purchased_n * 100.0)
+                if purchased_n and used_n is not None and purchased_n > 0
+                else "—")
+    return {
+        "service_id": fields.get("f_service_id", ""),
+        "customer": fields.get("f_customer", ""),
+        "updated_date": date.today().strftime("%d-%b-%Y"),
+        "ea_end_date": fields.get("f_end_date", ""),
+        "ep_term": fields.get("f_ep_term", ""),
+        "contract_scope": fields.get("f_contract_scope", ""),
+        "phase": fields.get("f_phase", ""),
+        "debug_licenses": fields.get("f_debug", ""),
+        "bundles": payload.get("bundles", []),
+        "finite_licenses": payload.get("finite_licenses", []),
+        "machine": {"df": machine_df,
+                    "stats": dp.compute_machine_stats(machine_df)},
+        "locations_top5": dp.top_locations(locations_df, 5),
+        "versions_top5": dp.top_versions(versions_df, 5),
+        "credits": {"purchased": fields.get("f_flex_purchased", "") or "—",
+                    "used": fields.get("f_flex_used", "") or "—",
+                    "pct_used": pct_used},
+        "support": {"tier": fields.get("f_support_tier", "") or "—",
+                    "scope": fields.get("f_support_scope", "")},
+    }
+
+
+with st.expander("💾 Account profiles — save, load, batch", expanded=False):
+    st.caption("Profiles store everything you've entered for an account as a "
+               "local JSON file (nothing leaves this machine). Quarterly "
+               "refresh: load the profile, paste the new tables, generate.")
+    msg = st.session_state.pop("profile_msg", None)
+    if msg:
+        (st.success if msg[0] == "success" else st.error)(msg[1])
+
+    saved = prof.list_profiles()
+    pc1, pc2 = st.columns(2)
+    with pc1:
+        st.markdown("**Save current inputs**")
+        default_name = prof.suggest_name(st.session_state)
+        pname = st.text_input("Profile name", value=default_name,
+                              key="profile_name")
+        save_clicked = st.button("💾 Save profile", width="stretch")
+    with pc2:
+        st.markdown("**Load / delete a saved profile**")
+        if saved:
+            sel = st.selectbox("Saved profiles", saved, key="profile_select")
+            lc, dc = st.columns(2)
+            with lc:
+                st.button("📂 Load", width="stretch",
+                          on_click=_apply_profile, args=(sel,))
+            with dc:
+                st.button("🗑 Delete", width="stretch",
+                          on_click=_delete_profile, args=(sel,))
+        else:
+            st.caption("No profiles saved yet.")
+
+    st.markdown("**Batch: one deck, one slide per account**")
+    batch_sel = st.multiselect("Profiles to include", saved,
+                               key="batch_profiles")
+    batch_insights = st.checkbox("Include a CSM Insights slide per account",
+                                 value=True, key="batch_insights")
+    if st.button("🛠️ Generate batch deck", disabled=not batch_sel,
+                 width="stretch"):
+        accounts = []
+        skipped = []
+        for name in batch_sel:
+            payload = prof.load_profile(name)
+            if not payload:
+                skipped.append(name)
+                continue
+            d = _data_from_profile(payload)
+            ins = generate_insights(d) if batch_insights else None
+            accounts.append((d, ins))
+        if skipped:
+            st.warning("Skipped (couldn't load): " + ", ".join(skipped))
+        if accounts:
+            deck = build_deck(accounts)
+            st.success(f"Deck built with {len(accounts)} account(s).")
+            st.download_button(
+                "⬇️ Download batch deck (.pptx)", data=deck,
+                file_name="EA_batch_deck.pptx",
+                mime=("application/vnd.openxmlformats-officedocument."
+                      "presentationml.presentation"),
+                width="stretch")
 
 # =========================================================================== #
 # PART 1 — Paste tables
@@ -92,13 +251,13 @@ with st.expander("Preview parsed tables", expanded=False):
     pc1, pc2, pc3 = st.columns(3)
     with pc1:
         st.write("**Machine count**")
-        st.dataframe(machine_df, use_container_width=True, hide_index=True)
+        st.dataframe(machine_df, width="stretch", hide_index=True)
     with pc2:
         st.write("**Locations**")
-        st.dataframe(locations_df, use_container_width=True, hide_index=True)
+        st.dataframe(locations_df, width="stretch", hide_index=True)
     with pc3:
         st.write("**Usage versions**")
-        st.dataframe(versions_df, use_container_width=True, hide_index=True)
+        st.dataframe(versions_df, width="stretch", hide_index=True)
 
 # =========================================================================== #
 # PART 2 — Upload screenshots (OCR -> editable review fields)
@@ -106,7 +265,6 @@ with st.expander("Preview parsed tables", expanded=False):
 st.header("Part 2 · Upload screenshots")
 st.warning("OCR is imperfect. **Every** value below is editable — review and "
            "correct everything before generating.")
-
 st.caption("Screenshots B and C are **optional** — skip either one and its "
            "card is simply left out of the slide. You can also type rows in by "
            "hand below instead of uploading.")
@@ -124,20 +282,44 @@ with up3:
 
 
 def _ocr_once(uploaded, state_key: str) -> str:
-    """OCR an upload once and cache the raw text, re-running only on change."""
+    """OCR an upload once (with word confidences) and cache the result,
+    re-running only when the file changes."""
     fid = _file_id(uploaded)
     if fid is None:
         return st.session_state.get(state_key + "_text", "")
     if st.session_state.get(state_key + "_fid") != fid:
         try:
-            text = sr.ocr_image(uploaded)
+            detail = sr.ocr_image_detailed(uploaded)
         except RuntimeError as exc:
             st.error(str(exc))
-            text = ""
-        st.session_state[state_key + "_text"] = text
+            detail = {"text": "", "words": []}
+        st.session_state[state_key + "_text"] = detail["text"]
+        st.session_state[state_key + "_words"] = detail["words"]
         st.session_state[state_key + "_fid"] = fid
         st.session_state[state_key + "_new"] = True
     return st.session_state.get(state_key + "_text", "")
+
+
+_FIELD_LABELS = {
+    "service_id": "EA/EP Service ID", "customer": "Customer / Company",
+    "start_date": "Start / Effective Date", "ep_term": "EP Term",
+    "flex_credits": "FLEX credits purchased", "support_level": "Support tier",
+    "debug_licenses": "Debug licenses",
+}
+
+
+def _confidence_report(parsed: dict, words: list[dict]) -> tuple[list, list]:
+    """Split parsed contract fields into low-confidence and not-found lists."""
+    low, missing = [], []
+    for key, label in _FIELD_LABELS.items():
+        value = parsed.get(key, "")
+        if not value:
+            missing.append(label)
+            continue
+        conf = sr.field_confidence(words, value)
+        if conf is not None and conf < 70:
+            low.append(f"{label} ({conf:.0f}%)")
+    return low, missing
 
 
 # --- Screenshot A: Contract details ---------------------------------------- #
@@ -161,6 +343,18 @@ if st.session_state.pop("a_new", False):
     st.session_state["f_end_date"] = end.strftime("%d-%b-%Y").upper() if end else ""
     st.session_state["f_phase"] = ph["phase"]
     st.session_state["f_phase_hint"] = ph["hint"]
+    low, missing = _confidence_report(
+        parsed, st.session_state.get("a_words", []))
+    st.session_state["a_report"] = (low, missing)
+
+# Review-focus warnings from the last OCR run.
+if st.session_state.get("a_report"):
+    low, missing = st.session_state["a_report"]
+    if low:
+        st.warning("⚠️ Low OCR confidence — double-check: " + ", ".join(low))
+    if missing:
+        st.info("Not found in the screenshot — enter manually: "
+                + ", ".join(missing))
 
 
 def _recompute_end_phase():
@@ -179,33 +373,39 @@ def _recompute_end_phase():
     st.session_state["f_phase_hint"] = ph["hint"]
 
 
-fa1, fa2 = st.columns(2)
-with fa1:
-    st.text_input("EA/EP Service ID", key="f_service_id",
-                  placeholder="EA-15725")
-    st.text_input("Customer / Company", key="f_customer",
-                  placeholder="RTX Corporation")
-    st.text_input("Start / Effective Date", key="f_start_date",
-                  placeholder="02-JAN-2026")
-    st.text_input("EP Term", key="f_ep_term", placeholder="3 years")
-with fa2:
-    cols_e = st.columns([3, 1])
-    with cols_e[0]:
+img_col_a, fields_col_a = st.columns([2, 3])
+with img_col_a:
+    if img_a is not None:
+        st.image(img_a, caption="Screenshot A (for side-by-side review)",
+                 width="stretch")
+    else:
+        st.caption("Upload Screenshot A to review it side-by-side here, or "
+                   "type the fields directly.")
+
+with fields_col_a:
+    fa1, fa2 = st.columns(2)
+    with fa1:
+        st.text_input("EA/EP Service ID", key="f_service_id",
+                      placeholder="EA-15725")
+        st.text_input("Customer / Company", key="f_customer",
+                      placeholder="RTX Corporation")
+        st.text_input("Start / Effective Date", key="f_start_date",
+                      placeholder="02-JAN-2026")
+        st.text_input("EP Term", key="f_ep_term", placeholder="3 years")
+        st.selectbox("Debug licenses included", ["Yes", "No"], key="f_debug")
+    with fa2:
         st.text_input("EA End Date (computed — editable)", key="f_end_date",
                       placeholder="01-JAN-2029")
-    with cols_e[1]:
-        st.write("")
-        st.write("")
-        st.button("↻ Recompute", help="Recompute End Date & Phase from the "
-                  "current Start Date + EP Term", on_click=_recompute_end_phase)
-    st.text_input("Phase (computed — editable)", key="f_phase",
-                  placeholder="Second Half")
-    hint = st.session_state.get("f_phase_hint", "")
-    if hint:
-        st.caption(f"Hint: **{hint}**")
-    st.text_input("Contract Scope (fill in — usually missing)",
-                  key="f_contract_scope", placeholder="e.g. All NI software")
-    st.selectbox("Debug licenses included", ["Yes", "No"], key="f_debug")
+        st.button("↻ Recompute End Date & Phase",
+                  help="Recompute from the current Start Date + EP Term",
+                  on_click=_recompute_end_phase)
+        st.text_input("Phase (computed — editable)", key="f_phase",
+                      placeholder="Second Half")
+        hint = st.session_state.get("f_phase_hint", "")
+        if hint:
+            st.caption(f"Hint: **{hint}**")
+        st.text_input("Contract Scope (fill in — usually missing)",
+                      key="f_contract_scope", placeholder="e.g. All NI software")
 
 st.markdown("**Technical support**")
 sc1, sc2 = st.columns(2)
@@ -243,20 +443,30 @@ if st.session_state.pop("b_new", False):
     st.session_state["finite_seed"] = pd.DataFrame(
         rows or [], columns=["count", "license_type", "license_name"]
     )
+    _bump_editor_nonce()
 if "finite_seed" not in st.session_state:
     st.session_state["finite_seed"] = pd.DataFrame(
         columns=["count", "license_type", "license_name"]
     )
-st.caption("Columns: count · license type · license name. Edit/add/remove rows.")
-finite_edit = st.data_editor(
-    st.session_state["finite_seed"], num_rows="dynamic", key="finite_editor",
-    use_container_width=True,
-    column_config={
-        "count": st.column_config.NumberColumn("Count", min_value=0, step=1),
-        "license_type": st.column_config.TextColumn("License Type"),
-        "license_name": st.column_config.TextColumn("License Name"),
-    },
-)
+img_col_b, ed_col_b = st.columns([2, 3])
+with img_col_b:
+    if img_b is not None:
+        st.image(img_b, caption="Screenshot B", width="stretch")
+    else:
+        st.caption("Optional — upload Screenshot B, or type rows directly.")
+with ed_col_b:
+    st.caption("Columns: count · license type · license name. "
+               "Edit/add/remove rows.")
+    finite_edit = st.data_editor(
+        st.session_state["finite_seed"], num_rows="dynamic",
+        key=f"finite_editor_{_editor_nonce()}", width="stretch",
+        column_config={
+            "count": st.column_config.NumberColumn("Count", min_value=0,
+                                                   step=1),
+            "license_type": st.column_config.TextColumn("License Type"),
+            "license_name": st.column_config.TextColumn("License Name"),
+        },
+    )
 with st.expander("Raw OCR text — Screenshot B"):
     st.text(text_b or "(no text yet)")
 
@@ -268,16 +478,27 @@ if st.session_state.pop("c_new", False):
     st.session_state["bundle_seed"] = pd.DataFrame(
         {"bundle_name": pd.Series(bundles or [], dtype="object")}
     )
+    _bump_editor_nonce()
 if "bundle_seed" not in st.session_state:
     st.session_state["bundle_seed"] = pd.DataFrame(
         {"bundle_name": pd.Series([], dtype="object")}
     )
-st.caption("One bundle name per row (the name after the colon). Edit/add/remove.")
-bundle_edit = st.data_editor(
-    st.session_state["bundle_seed"], num_rows="dynamic", key="bundle_editor",
-    use_container_width=True,
-    column_config={"bundle_name": st.column_config.TextColumn("Bundle Name")},
-)
+img_col_c, ed_col_c = st.columns([2, 3])
+with img_col_c:
+    if img_c is not None:
+        st.image(img_c, caption="Screenshot C", width="stretch")
+    else:
+        st.caption("Optional — upload Screenshot C, or type bundle names "
+                   "directly.")
+with ed_col_c:
+    st.caption("One bundle name per row (the name after the colon). "
+               "Edit/add/remove.")
+    bundle_edit = st.data_editor(
+        st.session_state["bundle_seed"], num_rows="dynamic",
+        key=f"bundle_editor_{_editor_nonce()}", width="stretch",
+        column_config={
+            "bundle_name": st.column_config.TextColumn("Bundle Name")},
+    )
 with st.expander("Raw OCR text — Screenshot C"):
     st.text(text_c or "(no text yet)")
 
@@ -287,14 +508,8 @@ with st.expander("Raw OCR text — Screenshot C"):
 st.header("Part 3 · Generate slide")
 
 
-def _collect_data() -> dict:
-    """Assemble the reviewed values + computed results into the slide payload."""
-    stats = dp.compute_machine_stats(machine_df)
-
-    locations_top5 = dp.top_locations(locations_df, 5)
-    versions_top5 = dp.top_versions(versions_df, 5)
-
-    finite = [
+def _current_finite_rows() -> list[dict]:
+    return [
         {
             "count": int(r["count"]) if pd.notna(r.get("count")) else 0,
             "license_type": str(r.get("license_type") or "").strip(),
@@ -304,12 +519,18 @@ def _collect_data() -> dict:
         if str(r.get("license_name") or r.get("license_type") or "").strip()
     ]
 
-    bundles = [
+
+def _current_bundles() -> list[str]:
+    return [
         str(r["bundle_name"]).strip()
         for _, r in bundle_edit.iterrows()
         if str(r.get("bundle_name") or "").strip()
     ]
 
+
+def _collect_data() -> dict:
+    """Assemble the reviewed values + computed results into the slide payload."""
+    stats = dp.compute_machine_stats(machine_df)
     purchased_n = dp._to_number(st.session_state.get("f_flex_purchased", ""))
     used_n = dp._to_number(st.session_state.get("f_flex_used", ""))
     pct_used = ""
@@ -325,11 +546,11 @@ def _collect_data() -> dict:
         "contract_scope": st.session_state.get("f_contract_scope", ""),
         "phase": st.session_state.get("f_phase", ""),
         "debug_licenses": st.session_state.get("f_debug", ""),
-        "bundles": bundles,
-        "finite_licenses": finite,
+        "bundles": _current_bundles(),
+        "finite_licenses": _current_finite_rows(),
         "machine": {"df": machine_df, "stats": stats},
-        "locations_top5": locations_top5,
-        "versions_top5": versions_top5,
+        "locations_top5": dp.top_locations(locations_df, 5),
+        "versions_top5": dp.top_versions(versions_df, 5),
         "credits": {
             "purchased": st.session_state.get("f_flex_purchased", "") or "—",
             "used": st.session_state.get("f_flex_used", "") or "—",
@@ -342,8 +563,20 @@ def _collect_data() -> dict:
     }
 
 
-generate = st.button("🛠️ Generate Slide", type="primary",
-                     use_container_width=True)
+# Save-profile action (button rendered in the Profiles expander above; handled
+# here so the editors' current rows are available).
+if save_clicked:
+    name = st.session_state.get("profile_name") or prof.suggest_name(
+        st.session_state)
+    path = prof.save_profile(name, st.session_state, _current_finite_rows(),
+                             _current_bundles())
+    st.toast(f"Profile saved: {path.name}")
+
+include_insights_slide = st.checkbox(
+    "Include a CSM Insights slide in the .pptx", value=True,
+    key="include_insights")
+
+generate = st.button("🛠️ Generate Slide", type="primary", width="stretch")
 
 if generate:
     # Light validation: credits used is a required field per spec.
@@ -356,8 +589,10 @@ if generate:
                  "in Part 1.")
     else:
         data = _collect_data()
+        items = generate_insights(data)
         try:
-            pptx_buf = build_slide(data)
+            pptx_buf = build_slide(
+                data, insights=items if include_insights_slide else None)
         except Exception as exc:  # surface build errors instead of crashing
             st.exception(exc)
             st.stop()
@@ -369,19 +604,22 @@ if generate:
             "⬇️ Download .pptx", data=pptx_buf, file_name=fname,
             mime=("application/vnd.openxmlformats-officedocument."
                   "presentationml.presentation"),
-            use_container_width=True,
+            width="stretch",
         )
 
-        # On-page slide preview of the trend.
-        st.subheader("Machine count trend (preview)")
-        st.line_chart(machine_df.set_index("period")["total"])
+        # ----------------------------------------------------------------- #
+        # On-page preview of the slide
+        # ----------------------------------------------------------------- #
+        st.subheader("Slide preview")
+        st.caption("A faithful preview of the generated slide — adjust any "
+                   "field above and click Generate again to refresh.")
+        components.html(generate_preview_html(data), height=700, scrolling=True)
 
         # ----------------------------------------------------------------- #
         # CSM insights (pure local computation)
         # ----------------------------------------------------------------- #
         st.subheader("🧠 CSM Insights")
         st.caption("Computed locally from your data — no LLM, no network.")
-        items = generate_insights(data)
         if not items:
             st.info("Not enough data to generate insights yet.")
         for it in items:

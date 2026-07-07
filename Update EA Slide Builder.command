@@ -9,6 +9,21 @@ cd "$(dirname "$0")" || exit 1
 echo "Checking for updates to EA Slide Builder..."
 echo
 
+if [ ! -d ".git" ]; then
+  echo "This folder is a ZIP download, not a Git copy, so it cannot self-update."
+  echo "(The tell-tale sign: the folder name contains 'CSM_OneSliders-claude-...'.)"
+  echo
+  echo "To get updates, make a one-time Git copy instead:"
+  echo "  1. Open Terminal"
+  echo "  2. cd ~"
+  echo "  3. git clone https://github.com/ryleyp/CSM_OneSliders.git EA"
+  echo "  4. Use the EA folder from now on (and delete this one)."
+  echo
+  echo "The app itself still works from this folder - it just won't update."
+  read -r -p "Press Enter to close..."
+  exit 1
+fi
+
 if ! command -v git >/dev/null 2>&1; then
   echo "Git is not installed, so automatic updates aren't available."
   echo "You can install Git from https://git-scm.com/download/mac, or download the"

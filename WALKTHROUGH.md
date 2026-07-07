@@ -150,3 +150,11 @@ handles that automatically anyway).
   keep the window open → close it to stop.
 - **Update the app (optional):** double-click **Update EA Slide Builder**.
 - **Where your data lives:** only on this computer. Keep contract info here.
+  Saved **account profiles** live in the `profiles/` folder next to the app —
+  they contain contract data, so treat that folder as confidential (it is
+  excluded from Git automatically).
+- **Health check:** open the **🔧 System check** expander at the top of the app
+  to see versions and whether Tesseract is installed; or run
+  `python -m tests.run_all` from the project folder for a full self-test.
+- **No-Python distribution (advanced):** see `packaging/BUILD_EXE.md` to build
+  a double-click `.exe` folder for teammates.

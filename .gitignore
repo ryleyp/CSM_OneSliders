@@ -4,3 +4,10 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# Account profiles contain contract data — they stay on the machine, never in git.
+profiles/
+
+# PyInstaller build output
+build/
+dist/
