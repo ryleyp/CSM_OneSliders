@@ -13,7 +13,10 @@ REM  Close the window (or press Ctrl+C) to stop the app.
 REM ==========================================================================
 
 cd /d "%~dp0"
-set PORT=8501
+setlocal
+set "PORT=8501"
+set "PYTHON_CMD="
+set "VENV_PY=.venv\Scripts\python.exe"
 
 echo ============================================
 echo    EA Slide Builder  (private / this PC only)
@@ -22,10 +25,32 @@ echo.
 
 REM --- Check Python is available --------------------------------------------
 where python >nul 2>nul
-if errorlevel 1 (
+if not errorlevel 1 (
+  set "PYTHON_CMD=python"
+) else (
+  where py >nul 2>nul
+  if not errorlevel 1 (
+    set "PYTHON_CMD=py -3"
+  )
+)
+
+if not defined PYTHON_CMD (
   echo Python is not installed, or not on your PATH.
   echo Install it from https://www.python.org/downloads/ and during install
   echo check the box "Add Python to PATH", then double-click this file again.
+  echo.
+  echo If Python is already installed from the Microsoft Store, try installing
+  echo the official python.org version instead.
+  echo.
+  pause
+  exit /b 1
+)
+
+%PYTHON_CMD% -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>nul
+if errorlevel 1 (
+  echo Python 3.9 or newer is required.
+  echo Install the latest Python 3 from https://www.python.org/downloads/
+  echo and then double-click this file again.
   echo.
   pause
   exit /b 1
@@ -34,7 +59,7 @@ if errorlevel 1 (
 REM --- First-run setup: create the virtual environment ----------------------
 if not exist ".venv\" (
   echo First-time setup: creating local environment ^(one time only^)...
-  python -m venv .venv
+  %PYTHON_CMD% -m venv .venv
   if errorlevel 1 (
     echo Could not create the environment.
     pause
@@ -42,14 +67,20 @@ if not exist ".venv\" (
   )
 )
 
-call ".venv\Scripts\activate.bat"
+if not exist "%VENV_PY%" (
+  echo The local environment is incomplete or damaged.
+  echo Delete the .venv folder in this directory, then double-click this file again.
+  echo.
+  pause
+  exit /b 1
+)
 
 REM --- Install dependencies if they're missing ------------------------------
-python -c "import streamlit" >nul 2>nul
+"%VENV_PY%" -c "import streamlit" >nul 2>nul
 if errorlevel 1 (
   echo Installing dependencies ^(one time only, this takes a minute or two^)...
-  python -m pip install --upgrade pip >nul 2>nul
-  python -m pip install -r requirements.txt
+  "%VENV_PY%" -m pip install --upgrade pip >nul 2>nul
+  "%VENV_PY%" -m pip install -r requirements.txt
   if errorlevel 1 (
     echo Dependency installation failed. Please send the messages above for help.
     pause
@@ -67,7 +98,7 @@ if errorlevel 1 (
 )
 
 REM --- Open the browser a few seconds after the server starts ----------------
-start "" /min cmd /c "timeout /t 5 /nobreak >nul & start "" http://localhost:%PORT%"
+start "" /min cmd /c "timeout /t 5 /nobreak >nul & start http://localhost:%PORT%"
 
 echo.
 echo Starting the app — PRIVATE, this PC only:
@@ -77,7 +108,7 @@ echo Keep this window open while using the app. Close it to stop.
 echo --------------------------------------------
 
 REM Launch Streamlit bound to localhost only (127.0.0.1).
-python -m streamlit run app.py --server.address=127.0.0.1 --server.port=%PORT% --server.headless=true
+"%VENV_PY%" -m streamlit run app.py --server.address=127.0.0.1 --server.port=%PORT% --server.headless=true
 
 echo.
 echo The app has stopped.

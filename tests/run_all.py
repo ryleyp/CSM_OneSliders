@@ -230,6 +230,26 @@ def test_profiles():
             prof.PROFILES_DIR = orig
 
 
+def test_windows_batch_files():
+    root = Path(__file__).resolve().parents[1]
+    start = (root / "Start EA Slide Builder.bat").read_text(encoding="utf-8")
+    update = (root / "Update EA Slide Builder.bat").read_text(encoding="utf-8")
+    build = (root / "packaging" / "build_exe.bat").read_text(encoding="utf-8")
+
+    check("windows start uses setlocal", "setlocal" in start)
+    check("windows start supports py launcher", "py -3" in start)
+    check("windows start uses venv python",
+          '.venv\\Scripts\\python.exe' in start)
+    check("windows start is localhost-only",
+          "--server.address=127.0.0.1" in start)
+    check("windows update fast-forwards main",
+          "git pull --ff-only origin main" in update)
+    check("windows exe build uses venv python",
+          '.venv\\Scripts\\python.exe' in build)
+    check("windows exe build runs PyInstaller",
+          "-m PyInstaller" in build)
+
+
 # --------------------------------------------------------------------------- #
 # Full app via Streamlit AppTest
 # --------------------------------------------------------------------------- #
@@ -264,7 +284,7 @@ def main() -> int:
     print("EA Slide Builder self-test")
     print("=" * 60)
     for fn in (test_parsers, test_screenshot_parsers, test_slide_builder,
-               test_preview, test_profiles, test_app):
+               test_preview, test_profiles, test_windows_batch_files, test_app):
         print(f"\n--- {fn.__name__} ---")
         try:
             fn()
