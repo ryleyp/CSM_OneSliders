@@ -1,10 +1,10 @@
 # EA Slide Builder
 
 A small, **fully offline** web app for building Enterprise Agreement (EA)
-one-slider PowerPoint slides. You run it on **your** PC; teammates open it in
-their browser over your local network. Paste a few tables, upload three contract
-screenshots, review the auto-parsed values, and click **Generate Slide** to get
-a polished 16:9 `.pptx` plus on-page CSM insights.
+one-slider PowerPoint slides. You run it on **your** PC, private to that machine
+by default. Paste a few tables, upload three contract screenshots, review the
+auto-parsed values, and click **Generate Slide** to get a polished 16:9 `.pptx`
+plus on-page CSM insights.
 
 > **Runs fully offline.** The app makes **no** network calls to outside services
 > or external APIs. No telemetry, no "phone home." All data stays on your
@@ -21,14 +21,19 @@ a polished 16:9 `.pptx` plus on-page CSM insights.
   (git-ignored — they never leave the machine).
 - **On-page slide preview** — a faithful preview of the slide renders on the
   page after Generate, so you can adjust and regenerate before downloading.
+  On macOS, the app also tries to render a local image preview from the actual
+  generated `.pptx` with Quick Look.
 - **CSM Insights slide** — optionally include the prioritized insights as a
   second slide in the .pptx (on by default).
 - **System check** — an expander at the top shows Python/package versions and
-  whether Tesseract is installed, for easy troubleshooting.
+  whether Tesseract and the local PPTX preview renderer are installed, for easy
+  troubleshooting.
 - **Part 1 — Paste tables** (tab-separated, copied straight from Excel):
   1. **Machine Count** — New & Existing machines over time (period, new, existing)
   2. **Locations** — location and machine count
   3. **Usage Versions** — product, version, user count
+  Each table includes a **Load example** button so users can see the expected
+  paste shape without leaving the app.
 - **Part 2 — Upload screenshots** (B and C optional), read locally with OCR
   (Tesseract via `pytesseract`, with automatic image preprocessing). Each
   screenshot shows **side-by-side** with its fields, low-confidence values are
@@ -37,9 +42,9 @@ a polished 16:9 `.pptx` plus on-page CSM insights.
   step is mandatory.
   - **Screenshot A — Contract details**: EA/EP Service ID, customer, start date,
     EP term, FLEX credits, support level, debug licenses. The app **computes a
-    suggested EA End Date** (Start Date + EP Term) and the **Phase** (Not
-    started / First Half / Second Half / Expired, with a "Year X of N" hint) —
-    all editable.
+    suggested EA End Date** (the inclusive final day of the EP term) and the
+    **Phase** (Not started / First Half / Second Half / Expired, with a "Year X
+    of N" hint) — all editable.
   - **Screenshot B — Finite licenses**: count, license type, license name.
   - **Screenshot C — Unlimited bundles**: bundle names.
 - **Part 3 — Generate Slide**: download the `.pptx` and read the CSM insights
@@ -75,7 +80,7 @@ The manual command-line steps below do the same thing, if you prefer.
 
 ### 1. Install Python dependencies
 
-Requires Python 3.10+.
+Requires Python 3.9+.
 
 ```bash
 pip install -r requirements.txt
@@ -132,6 +137,9 @@ So if your IP is `192.168.1.42`, teammates go to `http://192.168.1.42:8501`.
 
 - **Default is private** — the app is reachable **only on this machine**. Your
   data, including any contract info you enter, stays here.
+- **GitHub is for source code only.** Do not commit real screenshots, generated
+  slides, saved profiles, exports, or contract/customer data. The repository
+  ignore rules are set up to keep those local artifacts out of git.
 - **Keep contract data in-house.** Don't post the screenshots or generated
   slide to public locations; share the finished slide only via approved internal
   channels.
@@ -158,6 +166,7 @@ All parsing, OCR, slide building, and insight generation happen locally.
 | `screenshot_reader.py` | OCR (preprocessing + confidence) and per-screenshot parsers |
 | `slide_builder.py` | Build the 16:9 `.pptx` (adaptive layout, trendline, insights slide, batch decks) |
 | `preview.py` | On-page HTML preview of the slide |
+| `slide_preview.py` | Best-effort local image preview rendering for generated `.pptx` files |
 | `insights.py` | Local CSM insight generation (no LLM) |
 | `profiles.py` | Save/load local account profiles (JSON in `profiles/`, git-ignored) |
 | `tests/run_all.py` | Self-test — run `python -m tests.run_all` |

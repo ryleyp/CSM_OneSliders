@@ -1,12 +1,35 @@
 __pycache__/
 *.pyc
 *.pptx
+*.ppt
+*.pptm
+*.pdf
+*.xlsx
+*.xls
+*.csv
+*.tsv
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tif
+*.tiff
 .venv/
 venv/
 .DS_Store
+.env
+.env.*
+!.env.example
+secrets.toml
+.streamlit/secrets.toml
 
 # Account profiles contain contract data — they stay on the machine, never in git.
 profiles/
+uploads/
+screenshots/
+outputs/
+exports/
+generated/
 
 # PyInstaller build output
 build/

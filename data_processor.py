@@ -19,7 +19,7 @@ Everything here is local, in-memory pandas work. No network calls.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
@@ -315,7 +315,7 @@ def _split_location(location: str) -> tuple[str, str]:
     return "", loc
 
 
-def parse_locations(text: str) -> pd.DataFrame:
+def parse_locations(text: str, *, avoid_product_double_count: bool = True) -> pd.DataFrame:
     """Parse a locations paste into location / state / city / count rows.
 
     Supports two layouts, auto-detected:
@@ -323,8 +323,11 @@ def parse_locations(text: str) -> pd.DataFrame:
     1. GEO export (Tableau-style), one row per city (and product), e.g.
          ip_country | ip_region | ip_city | Measure Names | product_name | Measure Values
          United States | Connecticut | Bristol | Distinct count of machine_id | LabVIEW | 1
-       Machine counts are summed per (region, city); ip_region becomes the
-       state (abbreviated when it's a US state name).
+       Machine counts are grouped per (region, city); ip_region becomes the
+       state (abbreviated when it's a US state name). When the export is split
+       by product, the default is to use the largest product row per site
+       instead of summing product rows, which avoids counting the same machines
+       multiple times.
 
     2. SIMPLE: location | machine count.
 
@@ -332,7 +335,10 @@ def parse_locations(text: str) -> pd.DataFrame:
     """
     rows = _split_rows(text)
     if _is_geo_location_format(rows):
-        return _parse_locations_geo(rows)
+        return _parse_locations_geo(
+            rows,
+            avoid_product_double_count=avoid_product_double_count,
+        )
     return _parse_locations_simple(rows)
 
 
@@ -345,19 +351,25 @@ def _is_geo_location_format(rows: list[list[str]]) -> bool:
             or ("measure value" in header and "city" in header))
 
 
-def _parse_locations_geo(rows: list[list[str]]) -> pd.DataFrame:
+def _parse_locations_geo(
+    rows: list[list[str]],
+    *,
+    avoid_product_double_count: bool = True,
+) -> pd.DataFrame:
     """Aggregate a geo export to machines per (region, city)."""
     header = rows[0]
     region_i = city_i = value_i = None
-    country_i = None
+    product_i = measure_i = None
     for i, h in enumerate(header):
         hl = h.lower()
         if "region" in hl or hl.endswith("state") or hl == "state":
             region_i = i
         elif "city" in hl:
             city_i = i
-        elif "country" in hl:
-            country_i = i
+        elif "product" in hl:
+            product_i = i
+        elif "measure name" in hl:
+            measure_i = i
         elif "measure value" in hl or "(measure)" in hl or "count" in hl:
             value_i = i
     if city_i is None:
@@ -366,15 +378,28 @@ def _parse_locations_geo(rows: list[list[str]]) -> pd.DataFrame:
         value_i = len(header) - 1  # Measure Values is the last column
 
     agg: dict[tuple[str, str], int] = {}
+    use_max_per_site = avoid_product_double_count and product_i is not None
+    required_cols = [i for i in (region_i, city_i, value_i, measure_i) if i is not None]
     for cells in rows[1:]:
-        if len(cells) <= max(city_i, value_i):
+        if len(cells) <= max(required_cols):
             continue
+        if measure_i is not None and len(cells) > measure_i:
+            measure = cells[measure_i].lower()
+            if measure and not any(
+                k in measure for k in ("machine", "distinct", "count")
+            ):
+                continue
         region = cells[region_i].strip() if region_i is not None else ""
         city = cells[city_i].strip()
         count = _to_number(cells[value_i])
         if not city or count is None:
             continue
-        agg[(region, city)] = agg.get((region, city), 0) + int(count)
+        key = (region, city)
+        count_i = int(count)
+        if use_max_per_site:
+            agg[key] = max(agg.get(key, 0), count_i)
+        else:
+            agg[key] = agg.get(key, 0) + count_i
 
     records: list[dict] = []
     for (region, city), count in agg.items():
@@ -523,10 +548,14 @@ def add_years(start: date, years: float) -> date:
 
 
 def compute_end_date(start: date | None, term_years: float | None) -> date | None:
-    """Suggested EA End Date = Start Date + EP Term."""
+    """Suggested EA End Date = the inclusive final day of the EP term.
+
+    For example, a 3-year term beginning 02-JAN-2026 runs through
+    01-JAN-2029, not 02-JAN-2029.
+    """
     if start is None or term_years is None:
         return None
-    return add_years(start, term_years)
+    return add_years(start, term_years) - timedelta(days=1)
 
 
 def compute_phase(start: date | None, term_years: float | None,

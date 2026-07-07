@@ -62,14 +62,19 @@ def test_parsers():
     stats = dp.compute_machine_stats(wide)
     check("stats max/min", stats["max_total"] == 140 and stats["min_total"] == 110)
 
-    # Geo locations aggregate + state abbreviation.
+    # Geo locations default to avoiding product double-counting + state abbreviation.
     geo = ("ip_country\tip_region\tip_city\tMeasure Names\tproduct_name\tMeasure Values\n"
            "United States\tConnecticut\tBristol\tDistinct count\tLabVIEW\t1\n"
            "United States\tTexas\tAustin\tDistinct count\tLabVIEW\t50\n"
            "United States\tTexas\tAustin\tDistinct count\tDIAdem\t30\n")
     ldf = dp.parse_locations(geo)
     austin = ldf[ldf["city"] == "Austin"].iloc[0]
-    check("geo aggregation", int(austin["count"]) == 80, f"got {austin['count']}")
+    check("geo avoids product double-counting",
+          int(austin["count"]) == 50, f"got {austin['count']}")
+    summed = dp.parse_locations(geo, avoid_product_double_count=False)
+    summed_austin = summed[summed["city"] == "Austin"].iloc[0]
+    check("geo can sum product rows",
+          int(summed_austin["count"]) == 80, f"got {summed_austin['count']}")
     check("state abbreviation",
           ldf[ldf["city"] == "Bristol"].iloc[0]["state"] == "CT")
 
@@ -83,7 +88,7 @@ def test_parsers():
     start = dp.parse_date("02-JAN-2026")
     check("date parse", start == date(2026, 1, 2))
     end = dp.compute_end_date(start, dp.parse_term_years("3 years"))
-    check("end date", end == date(2029, 1, 2), f"got {end}")
+    check("inclusive end date", end == date(2029, 1, 1), f"got {end}")
     ph = dp.compute_phase(start, 3.0, today=date(2027, 9, 1))
     check("phase second half", ph["phase"] == "Second Half"
           and ph["hint"] == "Year 2 of 3")
@@ -182,10 +187,16 @@ def test_slide_builder():
 
 def test_preview():
     from preview import generate_preview_html
+    from slide_preview import preview_renderer_status
+
     html = generate_preview_html(_sample_data())
     for token in ("EA-15725", "Blue Origin", "<svg", "Peak machines",
                   "EA Platform Bundle"):
         check(f"preview contains {token!r}", token in html)
+    status = preview_renderer_status()
+    check("pptx preview status shape",
+          {"platform", "quicklook", "libreoffice", "pdftoppm", "available"}
+          <= set(status))
 
 
 def test_profiles():

@@ -57,6 +57,15 @@ if errorlevel 1 (
   )
 )
 
+REM --- Optional OCR system dependency ---------------------------------------
+where tesseract >nul 2>nul
+if errorlevel 1 (
+  echo.
+  echo Note: Tesseract OCR was not found.
+  echo The app will still run, but screenshots will need manual entry until
+  echo Tesseract is installed. The in-app System check shows this too.
+)
+
 REM --- Open the browser a few seconds after the server starts ----------------
 start "" /min cmd /c "timeout /t 5 /nobreak >nul & start "" http://localhost:%PORT%"
 

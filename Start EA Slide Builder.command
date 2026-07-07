@@ -56,6 +56,14 @@ if ! python3 -c "import streamlit" >/dev/null 2>&1; then
   }
 fi
 
+# --- Optional OCR system dependency ---------------------------------------- #
+if ! command -v tesseract >/dev/null 2>&1; then
+  echo
+  echo "Note: Tesseract OCR was not found."
+  echo "The app will still run, but screenshots will need manual entry until"
+  echo "Tesseract is installed. The in-app System check shows this too."
+fi
+
 # --- Start the app (private: localhost only) and open the browser ---------- #
 echo
 echo "Starting the app — PRIVATE, this Mac only:"

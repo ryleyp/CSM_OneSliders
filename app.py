@@ -32,6 +32,7 @@ import screenshot_reader as sr
 from insights import generate_insights
 from preview import generate_preview_html
 from slide_builder import build_deck, build_slide
+from slide_preview import preview_renderer_status, render_pptx_preview
 
 st.set_page_config(page_title="EA Slide Builder", page_icon="📊",
                    layout="wide")
@@ -63,6 +64,45 @@ def _bump_editor_nonce() -> None:
     st.session_state["editor_nonce"] = _editor_nonce() + 1
 
 
+SAMPLE_MACHINE_TEXT = "\n".join([
+    "Year\tQuarter\tMonth\tMachine Type\tDistinct count",
+    "2025\tQ1\tJanuary\tExisting\t690",
+    "2025\tQ1\tJanuary\tNew\t42",
+    "2025\tQ1\tFebruary\tExisting\t704",
+    "2025\tQ1\tFebruary\tNew\t38",
+    "2025\tQ1\tMarch\tExisting\t711",
+    "2025\tQ1\tMarch\tNew\t51",
+    "2025\tQ2\tApril\tExisting\t730",
+    "2025\tQ2\tApril\tNew\t66",
+    "2025\tQ2\tMay\tExisting\t744",
+    "2025\tQ2\tMay\tNew\t58",
+    "2025\tQ2\tJune\tExisting\t751",
+    "2025\tQ2\tJune\tNew\t62",
+])
+
+SAMPLE_LOCATIONS_TEXT = "\n".join([
+    "ip_country\tip_region\tip_city\tMeasure Names\tproduct_name\tMeasure Values",
+    "United States\tTexas\tAustin\tDistinct count of machine_id\tLabVIEW\t188",
+    "United States\tTexas\tAustin\tDistinct count of machine_id\tTestStand\t142",
+    "United States\tMichigan\tDetroit\tDistinct count of machine_id\tLabVIEW\t96",
+    "United States\tMichigan\tDetroit\tDistinct count of machine_id\tTestStand\t71",
+    "United States\tCalifornia\tSan Jose\tDistinct count of machine_id\tLabVIEW\t83",
+])
+
+SAMPLE_VERSIONS_TEXT = "\n".join([
+    "product_name\tproduct_version\tDistinct count of machine_id",
+    "LabVIEW\t2021\t399",
+    "LabVIEW\t2024\t126",
+    "TestStand\t2022\t188",
+    "TestStand\t2024\t49",
+    "VeriStand\t2023\t72",
+])
+
+
+def _load_example(key: str, text: str) -> None:
+    st.session_state[key] = text
+
+
 # --------------------------------------------------------------------------- #
 # System self-check
 # --------------------------------------------------------------------------- #
@@ -72,11 +112,15 @@ with st.expander("🔧 System check", expanded=False):
     tess_path = shutil.which("tesseract")
     tess_status = f"found at {tess_path}" if tess_path else \
         "NOT FOUND — screenshot OCR disabled (fields can be typed manually)"
+    preview_status = preview_renderer_status()
+    preview_label = "available via macOS Quick Look" if preview_status["available"] else \
+        "HTML preview available; PPTX image renderer not found"
     st.markdown(
         f"- Python **{platform.python_version()}** ({sys.executable})\n"
         f"- Streamlit **{st.__version__}** · pandas **{pd.__version__}** · "
         f"python-pptx **{_pptx.__version__}** · Pillow **{_pil.__version__}**\n"
         f"- Tesseract OCR: **{tess_status}**\n"
+        f"- PPTX image preview: **{preview_label}**\n"
         f"- Platform: {platform.platform()}\n"
         f"- Profiles folder: `{prof.PROFILES_DIR}`"
     )
@@ -220,6 +264,9 @@ with c1:
                "e.g. `2025⇥Q1⇥March⇥Existing⇥711`  \n"
                "Rolled up to quarterly totals automatically. (A simple "
                "`Period · New · Existing` table also works.)")
+    st.button("Load example", key="load_machine_example",
+              on_click=_load_example, args=("machine_text", SAMPLE_MACHINE_TEXT),
+              width="stretch")
     machine_text = st.text_area("Machine count table", height=180,
                                 key="machine_text", label_visibility="collapsed")
 
@@ -229,6 +276,15 @@ with c2:
                "Measure Names · product_name · Measure Values**  \n"
                "Aggregated to machines per city automatically. (A simple "
                "`Location · Count` table also works.)")
+    avoid_location_double_count = st.checkbox(
+        "Avoid product double-counting",
+        value=True,
+        help=("When the geo export is split by product, count each site once "
+              "using the largest product row instead of summing product rows."),
+    )
+    st.button("Load example", key="load_locations_example",
+              on_click=_load_example, args=("locations_text", SAMPLE_LOCATIONS_TEXT),
+              width="stretch")
     locations_text = st.text_area("Locations table", height=180,
                                   key="locations_text",
                                   label_visibility="collapsed")
@@ -238,13 +294,19 @@ with c3:
     st.caption("Paste: **product_name · product_version · Distinct count of "
                "machine_id**  \n"
                "e.g. `LabVIEW⇥2021⇥399`")
+    st.button("Load example", key="load_versions_example",
+              on_click=_load_example, args=("versions_text", SAMPLE_VERSIONS_TEXT),
+              width="stretch")
     versions_text = st.text_area("Usage versions table", height=180,
                                  key="versions_text",
                                  label_visibility="collapsed")
 
 # Live previews so the user can confirm parsing before generating.
 machine_df = dp.parse_machine_count(machine_text)
-locations_df = dp.parse_locations(locations_text)
+locations_df = dp.parse_locations(
+    locations_text,
+    avoid_product_double_count=avoid_location_double_count,
+)
 versions_df = dp.parse_usage_versions(versions_text)
 
 with st.expander("Preview parsed tables", expanded=False):
@@ -509,15 +571,17 @@ st.header("Part 3 · Generate slide")
 
 
 def _current_finite_rows() -> list[dict]:
-    return [
-        {
-            "count": int(r["count"]) if pd.notna(r.get("count")) else 0,
+    rows: list[dict] = []
+    for _, r in finite_edit.iterrows():
+        if not str(r.get("license_name") or r.get("license_type") or "").strip():
+            continue
+        count_n = dp._to_number(r.get("count"))
+        rows.append({
+            "count": int(count_n) if count_n is not None else 0,
             "license_type": str(r.get("license_type") or "").strip(),
             "license_name": str(r.get("license_name") or "").strip(),
-        }
-        for _, r in finite_edit.iterrows()
-        if str(r.get("license_name") or r.get("license_type") or "").strip()
-    ]
+        })
+    return rows
 
 
 def _current_bundles() -> list[str]:
@@ -613,6 +677,12 @@ if generate:
         st.subheader("Slide preview")
         st.caption("A faithful preview of the generated slide — adjust any "
                    "field above and click Generate again to refresh.")
+        pptx_preview = render_pptx_preview(pptx_buf.getvalue())
+        if pptx_preview.image_bytes:
+            st.image(pptx_preview.image_bytes, caption=pptx_preview.message,
+                     width="stretch")
+        elif pptx_preview.message:
+            st.caption(pptx_preview.message)
         components.html(generate_preview_html(data), height=700, scrolling=True)
 
         # ----------------------------------------------------------------- #
