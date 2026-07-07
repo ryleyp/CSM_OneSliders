@@ -250,6 +250,40 @@ def test_windows_batch_files():
           "-m PyInstaller" in build)
 
 
+def test_github_pages_lite_security():
+    root = Path(__file__).resolve().parents[1]
+    index = (root / "docs" / "index.html").read_text(encoding="utf-8")
+    app_js = (root / "docs" / "assets" / "app.js").read_text(encoding="utf-8")
+    styles = (root / "docs" / "assets" / "styles.css").read_text(encoding="utf-8")
+    combined = "\n".join([index, app_js, styles])
+
+    check("pages lite index exists", "<title>EA Slide Builder Lite</title>" in index)
+    check("pages lite has CSP", "Content-Security-Policy" in index)
+    check("pages lite limits network to self", "connect-src 'self'" in index)
+    check("pages lite uses local OCR worker", "worker-src 'self'" in index)
+    check("pages lite uses local script", 'src="assets/app.js"' in index)
+    check("pages lite uses local stylesheet", 'href="assets/styles.css"' in index)
+    check("pages lite has screenshot uploads", 'id="screenshotA" type="file"' in index)
+    check("pages lite has PPTX generation", "downloadCurrentPptx" in app_js)
+    check("pages lite has profile import/export", "currentProfilePayload" in app_js)
+    check("pages lite has batch deck generation", "downloadBatchPptx" in app_js)
+    check("pages lite has browser OCR", "Tesseract.createWorker" in app_js)
+    check("pages lite disables OCR cache", "cacheMethod: 'none'" in app_js)
+    check("pages lite has no external urls",
+          "http://" not in combined and "https://" not in combined)
+    check("pages lite has no browser storage",
+          "localStorage" not in combined and "sessionStorage" not in combined)
+    vendor = root / "docs" / "assets" / "vendor"
+    check("pages lite vendors JSZip", (vendor / "jszip.min.js").is_file())
+    check("pages lite vendors PptxGenJS", (vendor / "pptxgen.bundle.js").is_file())
+    check("pages lite vendors Tesseract API",
+          (vendor / "tesseract" / "tesseract.min.js").is_file())
+    check("pages lite vendors Tesseract worker",
+          (vendor / "tesseract" / "worker.min.js").is_file())
+    check("pages lite vendors English OCR data",
+          (vendor / "tesseract" / "lang" / "eng.traineddata.gz").is_file())
+
+
 # --------------------------------------------------------------------------- #
 # Full app via Streamlit AppTest
 # --------------------------------------------------------------------------- #
@@ -284,7 +318,8 @@ def main() -> int:
     print("EA Slide Builder self-test")
     print("=" * 60)
     for fn in (test_parsers, test_screenshot_parsers, test_slide_builder,
-               test_preview, test_profiles, test_windows_batch_files, test_app):
+               test_preview, test_profiles, test_windows_batch_files,
+               test_github_pages_lite_security, test_app):
         print(f"\n--- {fn.__name__} ---")
         try:
             fn()

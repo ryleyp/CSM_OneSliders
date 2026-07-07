@@ -25,6 +25,11 @@ plus on-page CSM insights.
   generated `.pptx` with Quick Look.
 - **CSM Insights slide** — optionally include the prioritized insights as a
   second slide in the .pptx (on by default).
+- **GitHub Pages browser version** — a static, browser-only companion in
+  `docs/` for hosted use through GitHub Pages. It supports pasted tables,
+  screenshot upload, browser-side OCR, editable review fields, local insights,
+  `.pptx` generation, profile JSON import/export, and batch decks. It has no
+  backend, no telemetry, no CDN, and no customer-data upload.
 - **System check** — an expander at the top shows Python/package versions and
   whether Tesseract and the local PPTX preview renderer are installed, for easy
   troubleshooting.
@@ -133,6 +138,27 @@ streamlit run app.py
 
 So if your IP is `192.168.1.42`, teammates go to `http://192.168.1.42:8501`.
 
+## GitHub Pages Browser Version
+
+The repository also includes a static hosted-safe version in `docs/`.
+
+- It is browser-only HTML/CSS/JavaScript.
+- It lets users select screenshots locally, runs OCR in the browser, and fills
+  editable review fields.
+- It generates PowerPoint files in the browser with vendored PptxGenJS/JSZip.
+- It supports profiles as explicit JSON export/import files and can build a
+  batch deck from multiple exported profile JSON files.
+- It uses no external scripts, fonts, images, APIs, or CDNs; browser OCR assets
+  are vendored under `docs/assets/vendor/tesseract/`.
+- Its Content Security Policy allows only same-origin static asset loading
+  (`connect-src 'self'`) so the OCR engine can load its local worker/core/data.
+- It does not use local/session storage or a hidden server-side profile folder.
+
+Because GitHub Pages is a hosted URL, the local launcher remains the strictest
+option for sensitive production workflows. The Pages version keeps processing in
+the browser and avoids uploads, but users should still only enter customer data
+on trusted machines and approved networks.
+
 ### Important: privacy & contract data
 
 - **Default is private** — the app is reachable **only on this machine**. Your
@@ -169,6 +195,7 @@ All parsing, OCR, slide building, and insight generation happen locally.
 | `slide_preview.py` | Best-effort local image preview rendering for generated `.pptx` files |
 | `insights.py` | Local CSM insight generation (no LLM) |
 | `profiles.py` | Save/load local account profiles (JSON in `profiles/`, git-ignored) |
+| `docs/` | GitHub Pages static app (browser-only, no backend/customer upload) |
 | `tests/run_all.py` | Self-test — run `python -m tests.run_all` |
 | `packaging/` | Optional PyInstaller .exe build (see `packaging/BUILD_EXE.md`) |
 | `.streamlit/config.toml` | Private localhost + telemetry-off config |

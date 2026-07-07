@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; worker-src 'self'; child-src 'none';">
+  <meta name="referrer" content="no-referrer">
+  <title>EA Slide Builder Lite</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">EA Slide Builder Lite</p>
+      <h1>Browser-only EA slide builder</h1>
+      <p class="lede">A GitHub Pages-safe version for pasted tables, screenshot OCR, editable review, profiles, batch decks, local preview, local insights, and browser-generated PPTX files.</p>
+    </div>
+    <div class="security-pill">No backend · No customer uploads · No external calls</div>
+  </header>
+
+  <main>
+    <section class="security">
+      <h2>Security Mode</h2>
+      <p>This static page runs entirely in your browser. It has no server-side processing, no profile storage, no telemetry, and no third-party scripts. Screenshots are read locally for browser OCR, preview, and optional source-evidence slides. Refreshing the page clears the entered data.</p>
+      <p class="small">Browser OCR loads static engine files from this same GitHub Pages site. Customer data, screenshots, profiles, and generated PPTX files are not uploaded to a server.</p>
+    </section>
+
+    <section class="controls" aria-label="Profiles and batch decks">
+      <div class="panel wide">
+        <h2>Account Profiles & Batch Decks</h2>
+        <div class="grid three profile-grid">
+          <label>Profile name<input id="profileName" placeholder="EA-15725_Sample_Customer"></label>
+          <div class="button-stack">
+            <button id="exportProfile" type="button">Export Profile JSON</button>
+            <label class="file-button">Import Profile JSON<input id="importProfile" type="file" accept="application/json"></label>
+          </div>
+          <div class="button-stack">
+            <label>Batch profile JSON files<input id="batchProfiles" type="file" accept="application/json" multiple></label>
+            <button id="downloadBatchPptx" type="button">Download Batch PPTX</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="controls" aria-label="Data entry">
+      <div class="panel">
+        <h2>Contract</h2>
+        <div class="grid two">
+          <label>EA/EP Service ID<input id="serviceId" placeholder="EA-15725"></label>
+          <label>Customer / Company<input id="customer" placeholder="RTX Corporation"></label>
+          <label>Start / Effective Date<input id="startDate" placeholder="02-JAN-2026"></label>
+          <label>EP Term<input id="epTerm" placeholder="3 years"></label>
+          <label>EA End Date<input id="endDate" placeholder="01-JAN-2029"></label>
+          <label>Phase<input id="phase" placeholder="Second Half"></label>
+          <label>Contract Scope<input id="contractScope" placeholder="All NI software"></label>
+          <label>Debug licenses
+            <select id="debugLicenses">
+              <option>No</option>
+              <option>Yes</option>
+            </select>
+          </label>
+        </div>
+        <button id="recomputeDates" type="button">Recompute End Date & Phase</button>
+      </div>
+
+      <div class="panel">
+        <h2>Support & Credits</h2>
+        <div class="grid two">
+          <label>Support tier<input id="supportTier" placeholder="Enterprise Support"></label>
+          <label>Support scope<input id="supportScope" placeholder="All Users"></label>
+          <label>FLEX credits purchased<input id="creditsPurchased" placeholder="20,000"></label>
+          <label>Credits used<input id="creditsUsed" placeholder="7,500"></label>
+        </div>
+      </div>
+
+      <div class="panel wide">
+        <div class="panel-title">
+          <h2>Pasted Tables</h2>
+          <button id="loadExamples" type="button">Load Examples</button>
+        </div>
+        <div class="grid three">
+          <label>Machine Count
+            <span>Year · Quarter · Month · Machine Type · Distinct count, or Period · New · Existing</span>
+            <textarea id="machineText" spellcheck="false"></textarea>
+          </label>
+          <label>Locations
+            <span>Geo export, or Location · Count</span>
+            <label class="check"><input id="avoidLocationDoubleCount" type="checkbox" checked> Avoid product double-counting</label>
+            <textarea id="locationsText" spellcheck="false"></textarea>
+          </label>
+          <label>Usage Versions
+            <span>product_name · product_version · Distinct count</span>
+            <textarea id="versionsText" spellcheck="false"></textarea>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel wide">
+        <h2>Licenses & Bundles</h2>
+        <div class="grid two">
+          <label>Finite licenses
+            <span>count · license type · license name</span>
+            <textarea id="finiteText" spellcheck="false"></textarea>
+          </label>
+          <label>Unlimited bundles
+            <span>One bundle name per line</span>
+            <textarea id="bundleText" spellcheck="false"></textarea>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel wide">
+        <h2>Source Screenshots</h2>
+        <p class="small">Optional. Selected images stay in this page only. Browser OCR fills editable fields, and selected screenshots can be included as a source-evidence slide in the generated PPTX.</p>
+        <div class="grid three">
+          <label>Screenshot A — Contract details
+            <input id="screenshotA" type="file" accept="image/png,image/jpeg,image/webp,image/bmp">
+            <span id="shotPreviewA" class="shot-preview">No image selected</span>
+            <button id="ocrA" type="button">Run OCR</button>
+            <span id="ocrStatusA" class="small"></span>
+            <details>
+              <summary>Raw OCR text</summary>
+              <textarea id="ocrRawA" spellcheck="false"></textarea>
+            </details>
+          </label>
+          <label>Screenshot B — Finite licenses
+            <input id="screenshotB" type="file" accept="image/png,image/jpeg,image/webp,image/bmp">
+            <span id="shotPreviewB" class="shot-preview">No image selected</span>
+            <button id="ocrB" type="button">Run OCR</button>
+            <span id="ocrStatusB" class="small"></span>
+            <details>
+              <summary>Raw OCR text</summary>
+              <textarea id="ocrRawB" spellcheck="false"></textarea>
+            </details>
+          </label>
+          <label>Screenshot C — Unlimited bundles
+            <input id="screenshotC" type="file" accept="image/png,image/jpeg,image/webp,image/bmp">
+            <span id="shotPreviewC" class="shot-preview">No image selected</span>
+            <button id="ocrC" type="button">Run OCR</button>
+            <span id="ocrStatusC" class="small"></span>
+            <details>
+              <summary>Raw OCR text</summary>
+              <textarea id="ocrRawC" spellcheck="false"></textarea>
+            </details>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="actions">
+      <button id="generate" type="button">Generate Preview</button>
+      <button id="downloadPptx" type="button">Download PPTX</button>
+      <button id="printPage" type="button">Print / Save PDF</button>
+      <button id="clearAll" type="button">Clear Data</button>
+      <label class="check"><input id="includeInsights" type="checkbox" checked> Include CSM Insights slide</label>
+      <label class="check"><input id="includeScreenshots" type="checkbox" checked> Include source screenshots slide</label>
+    </section>
+    <div id="appStatus" class="app-status" role="status" aria-live="polite"></div>
+
+    <section class="review" aria-live="polite">
+      <div id="warnings"></div>
+    </section>
+
+    <section id="previewArea" class="preview-area" aria-label="Generated preview">
+      <div class="slide" id="slidePreview"></div>
+      <aside class="insights">
+        <h2>CSM Insights</h2>
+        <div id="insights"></div>
+      </aside>
+    </section>
+  </main>
+
+  <footer>
+    <p>GitHub Pages Lite version. Source code only is hosted; entered data and selected screenshots stay in this browser session.</p>
+  </footer>
+
+  <script src="assets/vendor/jszip.min.js"></script>
+  <script src="assets/vendor/pptxgen.bundle.js"></script>
+  <script src="assets/vendor/tesseract/tesseract.min.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
