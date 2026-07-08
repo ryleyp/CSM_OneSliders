@@ -45,8 +45,8 @@ insights.
     The app **computes a suggested EA End Date** (the inclusive final day of
     the EP term) and the **Phase** (Not started / First Half / Second Half /
     Expired, with a "Year X of N" hint) — all editable.
-  - **Finite licenses**: add/remove rows for count, license type, and license
-    name.
+  - **Finite licenses**: add/remove rows for count, license name, and a license
+    type dropdown (`Concurrent` or `Named-User or Computer-Based`).
   - **Unlimited bundles**: add/remove bundle-name rows.
 - **Part 3 — Generate Slide**: download the `.pptx` and read the CSM insights
   (computed locally — no LLM, no network).

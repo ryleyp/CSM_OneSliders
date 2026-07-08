@@ -278,7 +278,8 @@ button:hover { background: #02523a; }
   background: #fff;
 }
 
-.editor-row input {
+.editor-row input,
+.editor-row select {
   padding: 8px;
 }
 

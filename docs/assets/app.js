@@ -390,29 +390,45 @@
     return rows(text).map((cells) => {
       if (cells.length >= 3) {
         const count = toNumber(cells[0]);
-        return count === null ? null : { count: Math.trunc(count), license_type: cells[1], license_name: cells.slice(2).join(' ') };
+        return count === null ? null : { count: Math.trunc(count), license_type: normalizeFiniteLicenseType(cells[1]), license_name: cells.slice(2).join(' ') };
       }
       if (cells.length === 1) {
         const match = cells[0].match(/^(\d[\d,]*)\s+(.+)$/);
         if (!match) return null;
-        return { count: Math.trunc(toNumber(match[1])), license_type: match[2], license_name: '' };
+        return { count: Math.trunc(toNumber(match[1])), license_type: normalizeFiniteLicenseType(match[2]), license_name: '' };
       }
       return null;
     }).filter(Boolean);
   }
 
+  const FINITE_LICENSE_TYPES = ['Concurrent', 'Named-User or Computer-Based'];
   const blankFiniteRow = () => ({ count: '', license_type: '', license_name: '' });
   const blankBundleRow = () => ({ bundle_name: '' });
+
+  function normalizeFiniteLicenseType(value) {
+    const text = String(value || '').trim();
+    const low = text.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ');
+    if (low.includes('concurrent')) return 'Concurrent';
+    if (low.includes('named') || low.includes('computer based')) return 'Named-User or Computer-Based';
+    return '';
+  }
+
+  function finiteRowsToText(editorRows) {
+    return editorRows
+      .filter((row) => row.count || row.license_type || row.license_name)
+      .map((row) => `${row.count}\t${normalizeFiniteLicenseType(row.license_type)}\t${row.license_name}`)
+      .join('\n');
+  }
 
   function finiteEditorRowsFromText(text) {
     const parsed = rows(text).map((cells) => {
       if (cells.length >= 3) {
-        return { count: cells[0], license_type: cells[1], license_name: cells.slice(2).join(' ') };
+        return { count: cells[0], license_type: normalizeFiniteLicenseType(cells[1]), license_name: cells.slice(2).join(' ') };
       }
       if (cells.length === 1) {
         const match = cells[0].match(/^(\d[\d,]*)\s+(.+)$/);
         if (!match) return null;
-        return { count: match[1], license_type: match[2], license_name: '' };
+        return { count: match[1], license_type: normalizeFiniteLicenseType(match[2]), license_name: '' };
       }
       return null;
     }).filter(Boolean);
@@ -433,13 +449,19 @@
     const rowsToRender = editorRows.length ? editorRows : [blankFiniteRow()];
     container.innerHTML = [
       '<div class="editor-header"><span>Count</span><span>License Type</span><span>License Name</span><span></span></div>',
-      ...rowsToRender.map((row, i) => `
+      ...rowsToRender.map((row, i) => {
+        const type = normalizeFiniteLicenseType(row.license_type);
+        const options = [''].concat(FINITE_LICENSE_TYPES)
+          .map((option) => `<option value="${esc(option)}"${option === type ? ' selected' : ''}>${esc(option || 'Select type')}</option>`)
+          .join('');
+        return `
         <div class="editor-row" data-index="${i}">
           <input data-field="count" inputmode="numeric" aria-label="Finite count" placeholder="142" value="${esc(row.count || '')}">
-          <input data-field="license_type" aria-label="Finite license type" placeholder="Named User or Computer Based" value="${esc(row.license_type || '')}">
+          <select data-field="license_type" aria-label="Finite license type">${options}</select>
           <input data-field="license_name" aria-label="Finite license name" placeholder="DIAdem Professional with DAC" value="${esc(row.license_name || '')}">
           <button class="remove-row" type="button">Remove</button>
-        </div>`)
+        </div>`;
+      })
     ].join('');
   }
 
@@ -462,7 +484,7 @@
     if (!container) return [];
     return Array.from(container.querySelectorAll('.editor-row')).map((row) => ({
       count: row.querySelector('[data-field="count"]').value.trim(),
-      license_type: row.querySelector('[data-field="license_type"]').value.trim(),
+      license_type: normalizeFiniteLicenseType(row.querySelector('[data-field="license_type"]').value),
       license_name: row.querySelector('[data-field="license_name"]').value.trim()
     }));
   }
@@ -476,10 +498,7 @@
   }
 
   function syncFiniteTextFromEditor(renderNow = true) {
-    $('finiteText').value = readFiniteEditorRows()
-      .filter((row) => row.count || row.license_type || row.license_name)
-      .map((row) => `${row.count}\t${row.license_type}\t${row.license_name}`)
-      .join('\n');
+    $('finiteText').value = finiteRowsToText(readFiniteEditorRows());
     if (renderNow) render();
   }
 
@@ -492,8 +511,9 @@
   }
 
   function setFiniteText(value, renderNow = true) {
-    $('finiteText').value = value || '';
-    renderFiniteEditorRows(finiteEditorRowsFromText($('finiteText').value));
+    const editorRows = finiteEditorRowsFromText(value || '');
+    $('finiteText').value = finiteRowsToText(editorRows);
+    renderFiniteEditorRows(editorRows);
     if (renderNow) render();
   }
 
@@ -515,6 +535,7 @@
       syncBundleTextFromEditor();
     });
     $('finiteRows').addEventListener('input', () => syncFiniteTextFromEditor());
+    $('finiteRows').addEventListener('change', () => syncFiniteTextFromEditor());
     $('bundleRows').addEventListener('input', () => syncBundleTextFromEditor());
     $('finiteRows').addEventListener('click', (event) => {
       const button = event.target.closest('.remove-row');

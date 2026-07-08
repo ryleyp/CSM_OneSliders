@@ -343,6 +343,11 @@ def test_github_pages_lite_security():
           'id="finiteRows"' in index
           and 'id="addFiniteRow"' in index
           and "renderFiniteEditorRows" in app_js)
+    check("pages lite has finite license type dropdown",
+          'data-field="license_type"' in app_js
+          and "<select" in app_js
+          and "Named-User or Computer-Based" in app_js
+          and "Concurrent" in app_js)
     check("pages lite has editable bundle rows",
           'id="bundleRows"' in index
           and 'id="addBundleRow"' in index
@@ -370,7 +375,14 @@ def test_github_pages_lite_security():
 def test_app():
     from streamlit.testing.v1 import AppTest
 
-    app_path = str(Path(__file__).resolve().parents[1] / "app.py")
+    root = Path(__file__).resolve().parents[1]
+    app_source = (root / "app.py").read_text(encoding="utf-8")
+    check("app has finite license type dropdown",
+          "SelectboxColumn" in app_source
+          and "Named-User or Computer-Based" in app_source
+          and "Concurrent" in app_source)
+
+    app_path = str(root / "app.py")
     at = AppTest.from_file(app_path, default_timeout=60).run()
     check("app runs with no input", not at.exception,
           str(at.exception[0].value) if at.exception else "")

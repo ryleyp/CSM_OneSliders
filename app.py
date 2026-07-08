@@ -88,9 +88,29 @@ SAMPLE_VERSIONS_TEXT = "\n".join([
     "VeriStand\t2023\t72",
 ])
 
+FINITE_LICENSE_TYPES = ["Concurrent", "Named-User or Computer-Based"]
+
 
 def _load_example(key: str, text: str) -> None:
     st.session_state[key] = text
+
+
+def _normalize_finite_license_type(value) -> str:
+    text = str(value or "").strip()
+    low = text.lower().replace("-", " ").replace("_", " ")
+    low = " ".join(low.split())
+    if "concurrent" in low:
+        return "Concurrent"
+    if "named" in low or "computer based" in low:
+        return "Named-User or Computer-Based"
+    return ""
+
+
+def _finite_df(rows) -> pd.DataFrame:
+    df = pd.DataFrame(rows or [], columns=["count", "license_type", "license_name"])
+    if "license_type" in df.columns:
+        df["license_type"] = df["license_type"].map(_normalize_finite_license_type)
+    return df
 
 
 # --------------------------------------------------------------------------- #
@@ -125,9 +145,7 @@ def _apply_profile(name: str) -> None:
         st.session_state[k] = v
     for k, v in payload["fields"].items():
         st.session_state[k] = _truthy(v) if k == "f_systemlink_snow" else v
-    st.session_state["finite_seed"] = pd.DataFrame(
-        payload["finite_licenses"] or [],
-        columns=["count", "license_type", "license_name"])
+    st.session_state["finite_seed"] = _finite_df(payload["finite_licenses"])
     st.session_state["bundle_seed"] = pd.DataFrame(
         {"bundle_name": pd.Series(payload["bundles"] or [], dtype="object")})
     _bump_editor_nonce()
@@ -400,9 +418,7 @@ with tc3:
 # --- Finite licenses -------------------------------------------------------- #
 st.subheader("Finite license blanks (optional)")
 if "finite_seed" not in st.session_state:
-    st.session_state["finite_seed"] = pd.DataFrame(
-        columns=["count", "license_type", "license_name"]
-    )
+    st.session_state["finite_seed"] = _finite_df([])
 with st.container():
     st.caption("Columns: count · license type · license name. "
                "Edit/add/remove rows.")
@@ -412,7 +428,10 @@ with st.container():
         column_config={
             "count": st.column_config.NumberColumn("Count", min_value=0,
                                                    step=1),
-            "license_type": st.column_config.TextColumn("License Type"),
+            "license_type": st.column_config.SelectboxColumn(
+                "License Type",
+                options=FINITE_LICENSE_TYPES,
+            ),
             "license_name": st.column_config.TextColumn("License Name"),
         },
     )
@@ -445,7 +464,7 @@ def _current_finite_rows() -> list[dict]:
         count_n = dp._to_number(r.get("count"))
         rows.append({
             "count": int(count_n) if count_n is not None else 0,
-            "license_type": str(r.get("license_type") or "").strip(),
+            "license_type": _normalize_finite_license_type(r.get("license_type")),
             "license_name": str(r.get("license_name") or "").strip(),
         })
     return rows
