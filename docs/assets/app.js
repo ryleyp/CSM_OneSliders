@@ -415,7 +415,8 @@
       ep_term: '',
       flex_credits: '',
       support_level: '',
-      debug_licenses: ''
+      debug_licenses: '',
+      systemlink_snow: ''
     };
     let match = flat.match(/\bEA[-\s]?(\d{4,6})\b/i);
     if (match) result.service_id = `EA-${match[1]}`;
@@ -469,6 +470,9 @@
     if (match) {
       const val = match[1].toLowerCase();
       result.debug_licenses = ['yes', 'included', 'y'].includes(val) ? 'Yes' : 'No';
+    }
+    if (/system\s*link/i.test(flat) && /\b(snow|service\s*now)\b/i.test(flat)) {
+      result.systemlink_snow = 'Yes';
     }
     return result;
   }
@@ -667,6 +671,24 @@
     return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-').toUpperCase();
   }
 
+  function truthy(value) {
+    if (value === true) return true;
+    return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+  }
+
+  function supportScopeWithSnow(scope, enabled) {
+    const parts = [String(scope || '').trim()];
+    if (enabled) parts.push('SystemLink Support (SNOW)');
+    const seen = new Set();
+    return parts.filter((part) => {
+      if (!part) return false;
+      const key = part.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).join(' | ');
+  }
+
   function num(value) {
     return toNumber(value);
   }
@@ -777,6 +799,8 @@
     const purchased = toNumber($('creditsPurchased').value);
     const used = toNumber($('creditsUsed').value);
     const pctUsed = purchased && used !== null && purchased > 0 ? Math.round(used / purchased * 100) : '—';
+    const systemlinkSnow = $('systemlinkSnow').checked;
+    const supportScope = supportScopeWithSnow($('supportScope').value, systemlinkSnow);
     return {
       service_id: $('serviceId').value.trim(),
       customer: $('customer').value.trim(),
@@ -792,7 +816,7 @@
       locations_top5: topLocations(locations),
       versions_top5: topVersions(versions),
       credits: { purchased: $('creditsPurchased').value.trim() || '—', used: $('creditsUsed').value.trim() || '—', pct_used: pctUsed },
-      support: { tier: $('supportTier').value.trim() || '—', scope: $('supportScope').value.trim() }
+      support: { tier: $('supportTier').value.trim() || '—', scope: supportScope, systemlink_snow: systemlinkSnow }
     };
   }
 
@@ -842,6 +866,9 @@
         };
         preview.innerHTML = `<img src="${esc(reader.result)}" alt="${esc(meta.label)}">`;
         render();
+        if (key === 'a' && $('autoContractOcr') && $('autoContractOcr').checked) {
+          setTimeout(() => runOcr('a'), 0);
+        }
       };
       image.onerror = () => {
         preview.textContent = 'Could not preview image';
@@ -1139,6 +1166,7 @@
     if (parsed.flex_credits) $('creditsPurchased').value = parsed.flex_credits;
     if (parsed.support_level) $('supportTier').value = parsed.support_level;
     if (parsed.debug_licenses) $('debugLicenses').value = parsed.debug_licenses;
+    if (parsed.systemlink_snow) $('systemlinkSnow').checked = true;
     recomputeDates();
     const labels = {
       service_id: 'EA/EP Service ID',
@@ -1247,6 +1275,7 @@
     $('contractScope').value = 'All NI software';
     $('supportTier').value = 'Enterprise Support';
     $('supportScope').value = 'All Users';
+    $('systemlinkSnow').checked = false;
     $('creditsPurchased').value = '20,000';
     $('creditsUsed').value = '7,500';
     recomputeDates();
@@ -1296,6 +1325,7 @@
         f_debug: $('debugLicenses').value,
         f_support_tier: $('supportTier').value,
         f_support_scope: $('supportScope').value,
+        f_systemlink_snow: $('systemlinkSnow').checked,
         f_flex_purchased: $('creditsPurchased').value,
         f_flex_used: $('creditsUsed').value
       },
@@ -1316,6 +1346,8 @@
     const purchased = toNumber(fields.f_flex_purchased || '');
     const used = toNumber(fields.f_flex_used || '');
     const pctUsed = purchased && used !== null && purchased > 0 ? Math.round(used / purchased * 100) : '—';
+    const systemlinkSnow = truthy(fields.f_systemlink_snow);
+    const supportScope = supportScopeWithSnow(fields.f_support_scope || '', systemlinkSnow);
     return {
       service_id: fields.f_service_id || '',
       customer: fields.f_customer || '',
@@ -1331,7 +1363,7 @@
       locations_top5: topLocations(locations),
       versions_top5: topVersions(versions),
       credits: { purchased: fields.f_flex_purchased || '—', used: fields.f_flex_used || '—', pct_used: pctUsed },
-      support: { tier: fields.f_support_tier || '—', scope: fields.f_support_scope || '' }
+      support: { tier: fields.f_support_tier || '—', scope: supportScope, systemlink_snow: systemlinkSnow }
     };
   }
 
@@ -1351,6 +1383,7 @@
     $('debugLicenses').value = fields.f_debug || 'No';
     $('supportTier').value = fields.f_support_tier || '';
     $('supportScope').value = fields.f_support_scope || '';
+    $('systemlinkSnow').checked = truthy(fields.f_systemlink_snow);
     $('creditsPurchased').value = fields.f_flex_purchased || '';
     $('creditsUsed').value = fields.f_flex_used || '';
     $('avoidLocationDoubleCount').checked = payload.settings ? payload.settings.avoid_location_double_count !== false : true;
@@ -1725,7 +1758,7 @@
 
   function clearAll() {
     document.querySelectorAll('input, textarea').forEach((el) => {
-      if (el.type === 'checkbox') el.checked = ['avoidLocationDoubleCount', 'includeInsights', 'includeScreenshots'].includes(el.id);
+      if (el.type === 'checkbox') el.checked = ['avoidLocationDoubleCount', 'includeInsights', 'includeScreenshots', 'autoContractOcr'].includes(el.id);
       else el.value = '';
     });
     $('debugLicenses').value = 'No';

@@ -121,7 +121,7 @@ def parse_contract_details(text: str) -> dict:
 
     Returns a dict of best-guess values (any of which may be ''):
       service_id, customer, start_date, ep_term, flex_credits,
-      support_level, debug_licenses
+      support_level, debug_licenses, systemlink_snow
     """
     text = text or ""
     lines = [l for l in (text.splitlines()) if l.strip()]
@@ -134,6 +134,7 @@ def parse_contract_details(text: str) -> dict:
         "flex_credits": "",
         "support_level": "",
         "debug_licenses": "",
+        "systemlink_snow": "",
     }
 
     # EA/EP Service ID -> "EA-#####"
@@ -201,6 +202,11 @@ def parse_contract_details(text: str) -> dict:
     if m:
         val = m.group(1).lower()
         result["debug_licenses"] = "Yes" if val in ("yes", "included", "y") else "No"
+
+    if re.search(r"system\s*link", flat, re.IGNORECASE) and re.search(
+        r"\b(snow|service\s*now)\b", flat, re.IGNORECASE
+    ):
+        result["systemlink_snow"] = "Yes"
 
     return result
 

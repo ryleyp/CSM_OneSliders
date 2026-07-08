@@ -68,6 +68,7 @@
         <div class="grid two">
           <label>Support tier<input id="supportTier" placeholder="Enterprise Support"></label>
           <label>Support scope<input id="supportScope" placeholder="All Users"></label>
+          <label class="check"><input id="systemlinkSnow" type="checkbox"> SystemLink support (SNOW)</label>
           <label>FLEX credits purchased<input id="creditsPurchased" placeholder="20,000"></label>
           <label>Credits used<input id="creditsUsed" placeholder="7,500"></label>
         </div>
@@ -112,6 +113,7 @@
       <div class="panel wide">
         <h2>Source Screenshots</h2>
         <p class="small">Optional. Selected images stay in this page only. Browser OCR fills editable fields, and selected screenshots can be included as a source-evidence slide in the generated PPTX.</p>
+        <label class="check"><input id="autoContractOcr" type="checkbox" checked> Auto-fill contract fields from Screenshot A</label>
         <div class="grid three">
           <label>Screenshot A — Contract details
             <input id="screenshotA" type="file" accept="image/png,image/jpeg,image/webp,image/bmp">

@@ -24,7 +24,8 @@ PROFILES_DIR = Path(__file__).parent / "profiles"
 FIELD_KEYS = [
     "f_service_id", "f_customer", "f_start_date", "f_ep_term",
     "f_end_date", "f_phase", "f_phase_hint", "f_contract_scope", "f_debug",
-    "f_support_tier", "f_support_scope", "f_flex_purchased", "f_flex_used",
+    "f_support_tier", "f_support_scope", "f_systemlink_snow",
+    "f_flex_purchased", "f_flex_used",
 ]
 TEXT_KEYS = ["machine_text", "locations_text", "versions_text"]
 
@@ -63,7 +64,11 @@ def save_profile(name: str, state: dict, finite_rows: list[dict],
         "version": 1,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "texts": {k: str(state.get(k, "") or "") for k in TEXT_KEYS},
-        "fields": {k: str(state.get(k, "") or "") for k in FIELD_KEYS},
+        "fields": {
+            k: bool(state.get(k, False)) if k == "f_systemlink_snow"
+            else str(state.get(k, "") or "")
+            for k in FIELD_KEYS
+        },
         "finite_licenses": [
             {
                 "count": int(r.get("count") or 0),
@@ -92,6 +97,7 @@ def load_profile(name: str) -> dict | None:
         return None
     data.setdefault("texts", {})
     data.setdefault("fields", {})
+    data["fields"].setdefault("f_systemlink_snow", False)
     data.setdefault("finite_licenses", [])
     data.setdefault("bundles", [])
     return data

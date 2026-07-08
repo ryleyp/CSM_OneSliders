@@ -148,6 +148,9 @@ def test_screenshot_parsers():
     check("contract customer", p["customer"] == "RTX Corporation")
     check("contract support", p["support_level"] == "Enterprise Support")
     check("contract debug", p["debug_licenses"] == "Yes")
+    snow = sr.parse_contract_details(
+        contract + "SystemLink Support (SNOW) included\n")
+    check("contract systemlink snow", snow["systemlink_snow"] == "Yes")
 
     finite = ("Finite Quantity NI Software Licenses\n"
               "142 Named User or Computer Based\tLabVIEW Full\n"
@@ -269,7 +272,8 @@ def test_profiles():
         try:
             state = {"machine_text": "P\tN\tE\nQ1\t1\t2",
                      "locations_text": "", "versions_text": "",
-                     "f_service_id": "EA-15725", "f_customer": "Blue Origin"}
+                     "f_service_id": "EA-15725", "f_customer": "Blue Origin",
+                     "f_systemlink_snow": True}
             prof.save_profile("test", state,
                               [{"count": 5, "license_type": "t",
                                 "license_name": "n"}],
@@ -280,6 +284,8 @@ def test_profiles():
                   p["texts"]["machine_text"] == state["machine_text"])
             check("profile fields round-trip",
                   p["fields"]["f_service_id"] == "EA-15725")
+            check("profile systemlink round-trip",
+                  p["fields"]["f_systemlink_snow"] is True)
             check("profile finite round-trip",
                   p["finite_licenses"][0]["count"] == 5)
             check("profile bundles round-trip", p["bundles"] == ["B1"])
@@ -325,6 +331,10 @@ def test_github_pages_lite_security():
     check("pages lite uses local script", 'src="assets/app.js"' in index)
     check("pages lite uses local stylesheet", 'href="assets/styles.css"' in index)
     check("pages lite has screenshot uploads", 'id="screenshotA" type="file"' in index)
+    check("pages lite has contract auto-fill",
+          'id="autoContractOcr" type="checkbox" checked' in index)
+    check("pages lite has systemlink snow option",
+          'id="systemlinkSnow" type="checkbox"' in index)
     check("pages lite has PPTX generation", "downloadCurrentPptx" in app_js)
     check("pages lite has profile import/export", "currentProfilePayload" in app_js)
     check("pages lite has batch deck generation", "downloadBatchPptx" in app_js)

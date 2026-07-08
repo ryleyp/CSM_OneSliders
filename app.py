@@ -138,7 +138,7 @@ def _apply_profile(name: str) -> None:
     for k, v in payload["texts"].items():
         st.session_state[k] = v
     for k, v in payload["fields"].items():
-        st.session_state[k] = v
+        st.session_state[k] = _truthy(v) if k == "f_systemlink_snow" else v
     st.session_state["finite_seed"] = pd.DataFrame(
         payload["finite_licenses"] or [],
         columns=["count", "license_type", "license_name"])
@@ -155,6 +155,29 @@ def _delete_profile(name: str) -> None:
         st.session_state["profile_msg"] = ("error", f"'{name}' not found.")
 
 
+def _truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _support_scope_with_snow(scope: str, systemlink_snow: bool) -> str:
+    parts = [str(scope or "").strip()]
+    if systemlink_snow:
+        parts.append("SystemLink Support (SNOW)")
+    clean: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        if not part:
+            continue
+        key = part.lower()
+        if key in seen:
+            continue
+        clean.append(part)
+        seen.add(key)
+    return " | ".join(clean)
+
+
 def _data_from_profile(payload: dict) -> dict:
     """Assemble the slide-data dict from a saved profile (for batch mode)."""
     texts = payload.get("texts", {})
@@ -167,6 +190,10 @@ def _data_from_profile(payload: dict) -> dict:
     pct_used = (round(used_n / purchased_n * 100.0)
                 if purchased_n and used_n is not None and purchased_n > 0
                 else "—")
+    support_scope = _support_scope_with_snow(
+        fields.get("f_support_scope", ""),
+        _truthy(fields.get("f_systemlink_snow", False)),
+    )
     return {
         "service_id": fields.get("f_service_id", ""),
         "customer": fields.get("f_customer", ""),
@@ -186,7 +213,8 @@ def _data_from_profile(payload: dict) -> dict:
                     "used": fields.get("f_flex_used", "") or "—",
                     "pct_used": pct_used},
         "support": {"tier": fields.get("f_support_tier", "") or "—",
-                    "scope": fields.get("f_support_scope", "")},
+                    "scope": support_scope,
+                    "systemlink_snow": _truthy(fields.get("f_systemlink_snow", False))},
     }
 
 
@@ -389,17 +417,27 @@ st.subheader("Screenshot A · Contract details")
 text_a = _ocr_once(img_a, "a")
 if st.session_state.pop("a_new", False):
     parsed = sr.parse_contract_details(text_a)
-    # Seed editable widget state (only when a new file was OCR'd).
-    st.session_state["f_service_id"] = parsed["service_id"]
-    st.session_state["f_customer"] = parsed["customer"]
-    st.session_state["f_start_date"] = parsed["start_date"]
-    st.session_state["f_ep_term"] = parsed["ep_term"]
-    st.session_state["f_flex_purchased"] = parsed["flex_credits"]
-    st.session_state["f_support_tier"] = parsed["support_level"]
-    st.session_state["f_debug"] = parsed["debug_licenses"] or "No"
+    # Seed editable widget state only with values OCR actually found. This
+    # keeps an imperfect OCR pass from wiping reviewed/profile-loaded fields.
+    field_map = {
+        "service_id": "f_service_id",
+        "customer": "f_customer",
+        "start_date": "f_start_date",
+        "ep_term": "f_ep_term",
+        "flex_credits": "f_flex_purchased",
+        "support_level": "f_support_tier",
+        "debug_licenses": "f_debug",
+    }
+    for parsed_key, state_key in field_map.items():
+        value = parsed.get(parsed_key)
+        if value:
+            st.session_state[state_key] = value
+    st.session_state.setdefault("f_debug", "No")
+    if parsed.get("systemlink_snow"):
+        st.session_state["f_systemlink_snow"] = True
     # Compute suggested End Date + Phase from Start Date + EP Term.
-    start = dp.parse_date(parsed["start_date"])
-    term = dp.parse_term_years(parsed["ep_term"])
+    start = dp.parse_date(st.session_state.get("f_start_date", ""))
+    term = dp.parse_term_years(st.session_state.get("f_ep_term", ""))
     end = dp.compute_end_date(start, term)
     ph = dp.compute_phase(start, term)
     st.session_state["f_end_date"] = end.strftime("%d-%b-%Y").upper() if end else ""
@@ -470,13 +508,16 @@ with fields_col_a:
                       key="f_contract_scope", placeholder="e.g. All NI software")
 
 st.markdown("**Technical support**")
-sc1, sc2 = st.columns(2)
+sc1, sc2, sc3 = st.columns([1, 1, 1])
 with sc1:
     st.text_input("Support tier", key="f_support_tier",
                   placeholder="Enterprise Support")
 with sc2:
     st.text_input("Support scope", key="f_support_scope",
                   placeholder="All Users")
+with sc3:
+    st.checkbox("SystemLink support (SNOW)", key="f_systemlink_snow",
+                help="Adds SystemLink Support (SNOW) to the Technical Support card.")
 
 st.markdown("**Training / FLEX credits**")
 tc1, tc2, tc3 = st.columns(3)
@@ -597,6 +638,11 @@ def _collect_data() -> dict:
     stats = dp.compute_machine_stats(machine_df)
     purchased_n = dp._to_number(st.session_state.get("f_flex_purchased", ""))
     used_n = dp._to_number(st.session_state.get("f_flex_used", ""))
+    systemlink_snow = bool(st.session_state.get("f_systemlink_snow", False))
+    support_scope = _support_scope_with_snow(
+        st.session_state.get("f_support_scope", ""),
+        systemlink_snow,
+    )
     pct_used = ""
     if purchased_n and used_n is not None and purchased_n > 0:
         pct_used = round(used_n / purchased_n * 100.0)
@@ -622,7 +668,8 @@ def _collect_data() -> dict:
         },
         "support": {
             "tier": st.session_state.get("f_support_tier", "") or "—",
-            "scope": st.session_state.get("f_support_scope", ""),
+            "scope": support_scope,
+            "systemlink_snow": systemlink_snow,
         },
     }
 
