@@ -670,6 +670,14 @@ def _support_card(slide, x, y, w, h, data):
         r2.font.size = Pt(9)
         r2.font.name = SANS
         r2.font.color.rgb = MUTED_GREEN
+    if support.get("systemlink_snow"):
+        p3 = tf.add_paragraph()
+        r3 = p3.add_run()
+        r3.text = "SystemLink Support (SNOW)"
+        r3.font.size = Pt(11)
+        r3.font.bold = True
+        r3.font.name = SANS
+        r3.font.color.rgb = WHITE
 
 
 # --------------------------------------------------------------------------- #

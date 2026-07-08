@@ -211,10 +211,12 @@ def _credits_card(data) -> str:
 
 def _support_card(data) -> str:
     s = data.get("support", {}) or {}
+    snow = ('<b class="snow">SystemLink Support (SNOW)</b>'
+            if s.get("systemlink_snow") else "")
     return (f'<div class="card dark"><div class="ctitle" style="color:{MUTED}">'
             f'TECHNICAL SUPPORT</div><div class="supp">'
             f'<b>{_e(s.get("tier", "—"))}</b>'
-            f'<span class="scope">{_e(s.get("scope", ""))}</span></div></div>')
+            f'<span class="scope">{_e(s.get("scope", ""))}</span>{snow}</div></div>')
 
 
 # --------------------------------------------------------------------------- #
@@ -313,6 +315,7 @@ def generate_preview_html(data: dict) -> str:
         text-align: center; gap: 5px; }}
       .supp {{ color: #fff; font-size: 12.5px; }}
       .supp .scope {{ color: {MUTED}; font-size: 10.5px; margin-left: 8px; }}
+      .supp .snow {{ display: block; margin-top: 4px; }}
     </style>"""
 
     left = (_contract_card(data) + _bundles_card(data)

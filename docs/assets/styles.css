@@ -434,6 +434,7 @@ tr:nth-child(odd) td { background: var(--tint); }
 .support-card { background: var(--dark); color: #fff; border-color: var(--dark); }
 .support-card .card-title { color: var(--muted); }
 .support-card .scope { display: block; color: var(--muted); margin-top: 3%; font-size: clamp(7px, .95cqw, 10px); }
+.support-card .snow { display: block; margin-top: 2%; }
 
 .insights {
   background: #fff;

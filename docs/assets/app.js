@@ -676,19 +676,6 @@
     return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
   }
 
-  function supportScopeWithSnow(scope, enabled) {
-    const parts = [String(scope || '').trim()];
-    if (enabled) parts.push('SystemLink Support (SNOW)');
-    const seen = new Set();
-    return parts.filter((part) => {
-      if (!part) return false;
-      const key = part.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).join(' | ');
-  }
-
   function num(value) {
     return toNumber(value);
   }
@@ -787,7 +774,7 @@
           ${card('Top Site Locations', locRows ? table(['STATE', 'CITY', 'MACHINES'], locRows, 'site-table') : '<div class="empty">No location data</div>')}
           ${card('Version Usage', verRows ? table(['PRODUCT', 'TOTAL', 'TOP VER.', '%'], verRows, 'version-table') : '<div class="empty">No version data</div>')}
           ${card('Training Credit Usage', `<div class="stats3"><div><div class="lbl">Purchased</div><div class="med">${fmt(data.credits.purchased)}</div></div><div><div class="lbl">Used</div><div class="med">${fmt(data.credits.used)}</div></div><div><div class="lbl">Utilized</div><div class="med">${data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`}</div></div></div>`)}
-          ${card('Technical Support', `<b>${esc(data.support.tier || '—')}</b><span class="scope">${esc(data.support.scope || '')}</span>`, 'support-card')}
+          ${card('Technical Support', `<b>${esc(data.support.tier || '—')}</b><span class="scope">${esc(data.support.scope || '')}</span>${data.support.systemlink_snow ? '<b class="snow">SystemLink Support (SNOW)</b>' : ''}`, 'support-card')}
         </div>
       </div>`;
   }
@@ -800,7 +787,7 @@
     const used = toNumber($('creditsUsed').value);
     const pctUsed = purchased && used !== null && purchased > 0 ? Math.round(used / purchased * 100) : '—';
     const systemlinkSnow = $('systemlinkSnow').checked;
-    const supportScope = supportScopeWithSnow($('supportScope').value, systemlinkSnow);
+    const supportScope = $('supportScope').value.trim();
     return {
       service_id: $('serviceId').value.trim(),
       customer: $('customer').value.trim(),
@@ -1347,7 +1334,7 @@
     const used = toNumber(fields.f_flex_used || '');
     const pctUsed = purchased && used !== null && purchased > 0 ? Math.round(used / purchased * 100) : '—';
     const systemlinkSnow = truthy(fields.f_systemlink_snow);
-    const supportScope = supportScopeWithSnow(fields.f_support_scope || '', systemlinkSnow);
+    const supportScope = (fields.f_support_scope || '').trim();
     return {
       service_id: fields.f_service_id || '',
       customer: fields.f_customer || '',
@@ -1726,10 +1713,13 @@
     });
     addRect(slide, pptx, rightX, top + 5.34, colW, 0.86, PPT.dark, PPT.dark);
     addText(slide, 'TECHNICAL SUPPORT', { x: rightX + 0.14, y: top + 5.44, w: colW - 0.28, h: 0.2, fontSize: 7.5, bold: true, color: PPT.muted });
-    slide.addText([
-      { text: data.support.tier || '—', options: { fontSize: 11, bold: true, color: PPT.white } },
-      ...(data.support.scope ? [{ text: `   ${data.support.scope}`, options: { fontSize: 9, color: PPT.muted } }] : [])
-    ], { x: rightX + 0.14, y: top + 5.72, w: colW - 0.28, h: 0.28, fontFace: 'Calibri', valign: 'mid' });
+    const snow = !!data.support.systemlink_snow;
+    const supportRuns = [
+      { text: data.support.tier || '—', options: { fontSize: 11, bold: true, color: PPT.white, breakLine: snow && !data.support.scope } }
+    ];
+    if (data.support.scope) supportRuns.push({ text: `   ${data.support.scope}`, options: { fontSize: 9, color: PPT.muted, breakLine: snow } });
+    if (snow) supportRuns.push({ text: 'SystemLink Support (SNOW)', options: { fontSize: 11, bold: true, color: PPT.white } });
+    slide.addText(supportRuns, { x: rightX + 0.14, y: top + 5.64, w: colW - 0.28, h: 0.5, fontFace: 'Calibri', valign: 'mid' });
   }
 
   function addInsightsSlide(pptx, data, insights) {

@@ -161,23 +161,6 @@ def _truthy(value) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _support_scope_with_snow(scope: str, systemlink_snow: bool) -> str:
-    parts = [str(scope or "").strip()]
-    if systemlink_snow:
-        parts.append("SystemLink Support (SNOW)")
-    clean: list[str] = []
-    seen: set[str] = set()
-    for part in parts:
-        if not part:
-            continue
-        key = part.lower()
-        if key in seen:
-            continue
-        clean.append(part)
-        seen.add(key)
-    return " | ".join(clean)
-
-
 def _data_from_profile(payload: dict) -> dict:
     """Assemble the slide-data dict from a saved profile (for batch mode)."""
     texts = payload.get("texts", {})
@@ -190,10 +173,7 @@ def _data_from_profile(payload: dict) -> dict:
     pct_used = (round(used_n / purchased_n * 100.0)
                 if purchased_n and used_n is not None and purchased_n > 0
                 else "—")
-    support_scope = _support_scope_with_snow(
-        fields.get("f_support_scope", ""),
-        _truthy(fields.get("f_systemlink_snow", False)),
-    )
+    support_scope = str(fields.get("f_support_scope", "") or "").strip()
     return {
         "service_id": fields.get("f_service_id", ""),
         "customer": fields.get("f_customer", ""),
@@ -639,10 +619,7 @@ def _collect_data() -> dict:
     purchased_n = dp._to_number(st.session_state.get("f_flex_purchased", ""))
     used_n = dp._to_number(st.session_state.get("f_flex_used", ""))
     systemlink_snow = bool(st.session_state.get("f_systemlink_snow", False))
-    support_scope = _support_scope_with_snow(
-        st.session_state.get("f_support_scope", ""),
-        systemlink_snow,
-    )
+    support_scope = str(st.session_state.get("f_support_scope", "") or "").strip()
     pct_used = ""
     if purchased_n and used_n is not None and purchased_n > 0:
         pct_used = round(used_n / purchased_n * 100.0)
