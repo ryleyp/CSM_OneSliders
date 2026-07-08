@@ -71,6 +71,8 @@ def test_parsers():
     austin = ldf[ldf["city"] == "Austin"].iloc[0]
     check("geo avoids product double-counting",
           int(austin["count"]) == 50, f"got {austin['count']}")
+    check("geo keeps country",
+          austin["country"] == "United States", f"got {austin.to_dict()}")
     summed = dp.parse_locations(geo, avoid_product_double_count=False)
     summed_austin = summed[summed["city"] == "Austin"].iloc[0]
     check("geo can sum product rows",
@@ -102,8 +104,19 @@ def test_parsers():
     headerless_top = dp.top_locations(dp.parse_locations(geo_headerless), 5)
     check("headerless geo keeps state and city columns",
           headerless_top[0]["state"] == "CA"
-          and headerless_top[0]["city"] == "Ontario",
+          and headerless_top[0]["city"] == "Ontario"
+          and headerless_top[0]["country"] == "United States",
           f"got {headerless_top}")
+    structured_locations = dp.parse_locations(
+        "country\tcity\tstate\tmachines\n"
+        "United States\tAustin\tTexas\t50\n"
+        "Singapore\tSingapore\t\t12\n")
+    structured_top = dp.top_locations(structured_locations, 5)
+    check("simple country city state locations",
+          structured_top[0]["country"] == "United States"
+          and structured_top[0]["city"] == "Austin"
+          and structured_top[0]["state"] == "TX",
+          f"got {structured_top}")
 
     # Versions: top version per product.
     vdf = dp.parse_usage_versions(
@@ -188,7 +201,7 @@ def _sample_data():
         "finite_licenses": [{"count": 142, "license_type": "Named User",
                              "license_name": "LabVIEW Full"}],
         "machine": {"df": mdf, "stats": dp.compute_machine_stats(mdf)},
-        "locations_top5": [{"state": "TX", "city": "Austin",
+        "locations_top5": [{"country": "United States", "state": "TX", "city": "Austin",
                             "location": "Austin, TX", "count": 820}],
         "versions_top5": [{"product": "LabVIEW", "version": "2021",
                            "users": 399, "product_total": 2145, "pct": 19}],
@@ -255,7 +268,8 @@ def test_preview():
 
     html = generate_preview_html(_sample_data())
     for token in ("EA-15725", "Blue Origin", "<svg", "Peak machines",
-                  "EA Platform Bundle", "TOTAL", "TOP VER."):
+                  "EA Platform Bundle", "COUNTRY", "STATE", "CITY", "COUNT",
+                  "TOTAL", "TOP VER."):
         check(f"preview contains {token!r}", token in html)
     status = preview_renderer_status()
     check("pptx preview status shape",
@@ -339,6 +353,9 @@ def test_github_pages_lite_security():
     check("pages lite has finite and bundle blanks",
           "Finite license blanks" in index
           and "Unlimited bundle blanks" in index)
+    check("pages lite location table has country state city count",
+          "COUNTRY" in app_js and "STATE" in app_js and "CITY" in app_js
+          and "COUNT" in app_js)
     check("pages lite has editable license rows",
           'id="finiteRows"' in index
           and 'id="addFiniteRow"' in index

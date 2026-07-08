@@ -170,13 +170,15 @@ def _locations_card(data) -> str:
     if not rows:
         return _card("Top Site Locations", '<div class="empty">No location data</div>')
     body_rows = "".join(
-        f'<tr><td>{_e(r.get("state"))}</td>'
+        f'<tr><td>{_e(r.get("country", ""))}</td>'
+        f'<td>{_e(r.get("state"))}</td>'
         f'<td>{_e(r.get("city") or r.get("location"))}</td>'
         f'<td class="qty" style="text-align:right">{_fmt(r.get("count"))}</td></tr>'
         for r in rows[:5])
     return _card("Top Site Locations",
-                 f'<table class="site-table"><tr><th>STATE</th><th>CITY</th>'
-                 f'<th style="text-align:right">MACHINES</th></tr>{body_rows}</table>')
+                 f'<table class="site-table"><tr><th>COUNTRY</th><th>STATE</th>'
+                 f'<th>CITY</th>'
+                 f'<th style="text-align:right">COUNT</th></tr>{body_rows}</table>')
 
 
 def _versions_card(data) -> str:
@@ -282,11 +284,12 @@ def generate_preview_html(data: dict) -> str:
       .finite-table.dense th, .finite-table.dense td,
       .finite-table.ultra-dense th, .finite-table.ultra-dense td {{ padding: 2px 3px; }}
       .site-table, .version-table {{ height: 100%; }}
-      .site-table {{ font-size: 8px; }}
+      .site-table {{ font-size: 7.2px; }}
       .site-table th, .site-table td {{ padding: 2px 4px; }}
-      .site-table th:nth-child(1), .site-table td:nth-child(1) {{ width: 22%; }}
-      .site-table th:nth-child(2), .site-table td:nth-child(2) {{ width: 48%; }}
-      .site-table th:nth-child(3), .site-table td:nth-child(3) {{ width: 30%; }}
+      .site-table th:nth-child(1), .site-table td:nth-child(1) {{ width: 27%; }}
+      .site-table th:nth-child(2), .site-table td:nth-child(2) {{ width: 17%; }}
+      .site-table th:nth-child(3), .site-table td:nth-child(3) {{ width: 34%; }}
+      .site-table th:nth-child(4), .site-table td:nth-child(4) {{ width: 22%; }}
       .version-table {{ font-size: 7.5px; }}
       .version-table th, .version-table td {{ padding: 2px 3px; }}
       .version-table th:nth-child(1), .version-table td:nth-child(1) {{ width: 38%; }}

@@ -520,14 +520,16 @@ tr:nth-child(odd) td { background: var(--tint); }
   padding: .75% 1.35%;
 }
 
-.site-table { font-size: clamp(5.2px, .72cqw, 8px); }
-.site-table th { font-size: clamp(5px, .64cqw, 7px); }
+.site-table { font-size: clamp(4.9px, .66cqw, 7.4px); }
+.site-table th { font-size: clamp(4.6px, .56cqw, 6.4px); }
 .site-table th:nth-child(1),
-.site-table td:nth-child(1) { width: 22%; }
+.site-table td:nth-child(1) { width: 27%; }
 .site-table th:nth-child(2),
-.site-table td:nth-child(2) { width: 48%; }
+.site-table td:nth-child(2) { width: 17%; }
 .site-table th:nth-child(3),
-.site-table td:nth-child(3) { width: 30%; text-align: right; }
+.site-table td:nth-child(3) { width: 34%; }
+.site-table th:nth-child(4),
+.site-table td:nth-child(4) { width: 22%; text-align: right; }
 
 .version-table { font-size: clamp(5px, .66cqw, 7.4px); }
 .version-table th { font-size: clamp(4.8px, .6cqw, 6.8px); }

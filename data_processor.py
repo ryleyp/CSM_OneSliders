@@ -316,22 +316,22 @@ def _split_location(location: str) -> tuple[str, str]:
 
 
 def parse_locations(text: str, *, avoid_product_double_count: bool = True) -> pd.DataFrame:
-    """Parse a locations paste into location / state / city / count rows.
+    """Parse a locations paste into location / country / city / state / count rows.
 
     Supports two layouts, auto-detected:
 
     1. GEO export (Tableau-style), one row per city (and product), e.g.
          ip_country | ip_region | ip_city | Measure Names | product_name | Measure Values
          United States | Connecticut | Bristol | Distinct count of machine_id | LabVIEW | 1
-       Machine counts are grouped per (region, city); ip_region becomes the
+       Machine counts are grouped per (country, region, city); ip_region becomes the
        state (abbreviated when it's a US state name). When the export is split
        by product, the default is to use the largest product row per site
        instead of summing product rows, which avoids counting the same machines
        multiple times.
 
-    2. SIMPLE: location | machine count.
+    2. SIMPLE: location | machine count, or country | city | state | count.
 
-    Returns columns: location, state, city, count.
+    Returns columns: location, country, city, state, count.
     """
     rows = _split_rows(text)
     if _is_geo_location_format(rows):
@@ -371,13 +371,15 @@ def _parse_locations_geo(
         for key in ("ip_", "measure value", "measure name", "product_name", "city")
     ) and _to_number(first[-1]) is None
     data_rows = rows[1:] if has_header else rows
-    region_i = city_i = value_i = None
+    country_i = region_i = city_i = value_i = None
     product_i = measure_i = None
     if has_header:
         header = rows[0]
         for i, h in enumerate(header):
             hl = h.lower()
-            if "region" in hl or hl.endswith("state") or hl == "state":
+            if "country" in hl:
+                country_i = i
+            elif "region" in hl or hl.endswith("state") or hl == "state":
                 region_i = i
             elif "city" in hl:
                 city_i = i
@@ -389,13 +391,13 @@ def _parse_locations_geo(
                 value_i = i
     else:
         # Headerless export order: country, region, city, measure, product, value.
-        region_i, city_i, measure_i, product_i, value_i = 1, 2, 3, 4, len(first) - 1
+        country_i, region_i, city_i, measure_i, product_i, value_i = 0, 1, 2, 3, 4, len(first) - 1
     if city_i is None:
         return _parse_locations_simple(rows)
     if value_i is None:
         value_i = len(first) - 1  # Measure Values is the last column
 
-    agg: dict[tuple[str, str], int] = {}
+    agg: dict[tuple[str, str, str], int] = {}
     use_max_per_site = avoid_product_double_count and product_i is not None
     required_cols = [i for i in (region_i, city_i, value_i, measure_i) if i is not None]
     for cells in data_rows:
@@ -407,6 +409,7 @@ def _parse_locations_geo(
                 k in measure for k in ("machine", "distinct", "count")
             ):
                 continue
+        country = cells[country_i].strip() if country_i is not None and len(cells) > country_i else ""
         region = cells[region_i].strip() if region_i is not None else ""
         city = cells[city_i].strip()
         count = _to_number(cells[value_i])
@@ -414,7 +417,7 @@ def _parse_locations_geo(
             continue
         if _looks_like_non_site(city):
             continue
-        key = (region, city)
+        key = (country, region, city)
         count_i = int(count)
         if use_max_per_site:
             agg[key] = max(agg.get(key, 0), count_i)
@@ -422,17 +425,49 @@ def _parse_locations_geo(
             agg[key] = agg.get(key, 0) + count_i
 
     records: list[dict] = []
-    for (region, city), count in agg.items():
+    for (country, region, city), count in agg.items():
         state = _abbrev_state(region)
         location = f"{city}, {state}" if state else city
-        records.append({"location": location, "state": state, "city": city,
-                        "count": count})
-    return pd.DataFrame(records, columns=["location", "state", "city", "count"])
+        records.append({"location": location, "country": country,
+                        "city": city, "state": state, "count": count})
+    return pd.DataFrame(records, columns=["location", "country", "city", "state", "count"])
 
 
 def _parse_locations_simple(rows: list[list[str]]) -> pd.DataFrame:
     """Simple layout: location | machine count."""
     records: list[dict] = []
+    if rows:
+        first = [c.strip().lower() for c in rows[0]]
+        has_structured_header = (
+            any("country" in c for c in first)
+            and any("city" in c for c in first)
+            and any(("state" in c or "region" in c) for c in first)
+        )
+        if has_structured_header:
+            country_i = next((i for i, c in enumerate(first) if "country" in c), None)
+            city_i = next((i for i, c in enumerate(first) if "city" in c), None)
+            state_i = next((i for i, c in enumerate(first) if ("state" in c or "region" in c)), None)
+            count_i = next((
+                i for i, c in enumerate(first)
+                if c != "country"
+                and ("count" in c or "machine" in c or "value" in c)
+            ), len(first) - 1)
+            required = [i for i in (country_i, city_i, state_i, count_i) if i is not None]
+            for cells in rows[1:]:
+                if len(cells) <= max(required):
+                    continue
+                country = cells[country_i].strip() if country_i is not None else ""
+                city = cells[city_i].strip() if city_i is not None else ""
+                state = _abbrev_state(cells[state_i]) if state_i is not None else ""
+                count = _to_number(cells[count_i])
+                if not city or count is None or _looks_like_non_site(city):
+                    continue
+                location = f"{city}, {state}" if state else city
+                records.append({"location": location, "country": country,
+                                "city": city, "state": state,
+                                "count": int(count)})
+            return pd.DataFrame(records, columns=["location", "country", "city", "state", "count"])
+
     for i, cells in enumerate(rows):
         if len(cells) < 2:
             continue
@@ -446,10 +481,10 @@ def _parse_locations_simple(rows: list[list[str]]) -> pd.DataFrame:
         if _looks_like_non_site(city or location):
             continue
         records.append(
-            {"location": location, "state": state, "city": city,
+            {"location": location, "country": "", "city": city, "state": state,
              "count": int(count)}
         )
-    return pd.DataFrame(records, columns=["location", "state", "city", "count"])
+    return pd.DataFrame(records, columns=["location", "country", "city", "state", "count"])
 
 
 def _looks_like_non_site(value: str) -> bool:

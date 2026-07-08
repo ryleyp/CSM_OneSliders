@@ -264,14 +264,14 @@
     if (loc.includes(',')) {
       const [city, rest] = loc.split(/,(.*)/);
       const state = String(rest || '').trim().split(/\s+/)[0] || '';
-      return { state: US_STATES.has(state.toUpperCase()) ? state.toUpperCase() : state, city: city.trim() };
+      return { country: '', state: US_STATES.has(state.toUpperCase()) ? state.toUpperCase() : state, city: city.trim() };
     }
     const parts = loc.split(/\s+/);
     const tail = parts[parts.length - 1] || '';
     if (parts.length >= 2 && US_STATES.has(tail.toUpperCase())) {
-      return { state: tail.toUpperCase(), city: parts.slice(0, -1).join(' ') };
+      return { country: '', state: tail.toUpperCase(), city: parts.slice(0, -1).join(' ') };
     }
-    return { state: '', city: loc };
+    return { country: '', state: '', city: loc };
   }
 
   function parseLocations(text, avoidDoubleCount) {
@@ -286,6 +286,8 @@
     if (looksGeo) {
       return parseGeoLocations(data, avoidDoubleCount);
     }
+    const simple = parseStructuredSimpleLocations(data);
+    if (simple.length) return simple;
     return data.map((cells, i) => {
       if (cells.length < 2) return null;
       if (i === 0 && looksHeader(cells, [cells.length - 1])) return null;
@@ -293,7 +295,30 @@
       if (!cells[0] || count === null) return null;
       const split = splitLocation(cells[0]);
       if (looksLikeNonSite(split.city || cells[0])) return null;
-      return { location: cells[0], state: split.state, city: split.city, count: Math.trunc(count) };
+      return { location: cells[0], country: '', state: split.state, city: split.city, count: Math.trunc(count) };
+    }).filter(Boolean);
+  }
+
+  function parseStructuredSimpleLocations(data) {
+    if (!data.length) return [];
+    const header = data[0].map((c) => c.trim().toLowerCase());
+    const hasStructuredHeader = header.some((c) => c.includes('country'))
+      && header.some((c) => c.includes('city'))
+      && header.some((c) => c.includes('state') || c.includes('region'));
+    if (!hasStructuredHeader) return [];
+    const countryI = header.findIndex((c) => c.includes('country'));
+    const cityI = header.findIndex((c) => c.includes('city'));
+    const stateI = header.findIndex((c) => c.includes('state') || c.includes('region'));
+    let valueI = header.findIndex((c) => c !== 'country' && (c.includes('count') || c.includes('machine') || c.includes('value')));
+    if (valueI < 0) valueI = header.length - 1;
+    return data.slice(1).map((cells) => {
+      if (cells.length <= Math.max(countryI, cityI, stateI, valueI)) return null;
+      const country = cells[countryI].trim();
+      const city = cells[cityI].trim();
+      const state = abbrevState(cells[stateI]);
+      const count = toNumber(cells[valueI]);
+      if (!city || count === null || looksLikeNonSite(city)) return null;
+      return { location: state ? `${city}, ${state}` : city, country, city, state, count: Math.trunc(count) };
     }).filter(Boolean);
   }
 
@@ -304,17 +329,19 @@
       && toNumber(first[first.length - 1]) === null;
     const header = hasHeader ? first : [];
     const dataRows = hasHeader ? data.slice(1) : data;
-    let regionI = null, cityI = null, valueI = null, productI = null, measureI = null;
+    let countryI = null, regionI = null, cityI = null, valueI = null, productI = null, measureI = null;
     if (hasHeader) {
       header.forEach((h, i) => {
         const low = h.toLowerCase();
-        if (low.includes('region') || low.endsWith('state') || low === 'state') regionI = i;
+        if (low.includes('country')) countryI = i;
+        else if (low.includes('region') || low.endsWith('state') || low === 'state') regionI = i;
         else if (low.includes('city')) cityI = i;
         else if (low.includes('product')) productI = i;
         else if (low.includes('measure name')) measureI = i;
         else if (low.includes('measure value') || low.includes('(measure)') || low.includes('count')) valueI = i;
       });
     } else {
+      countryI = 0;
       regionI = 1;
       cityI = 2;
       measureI = 3;
@@ -332,19 +359,20 @@
         const measure = cells[measureI].toLowerCase();
         if (measure && !['machine', 'distinct', 'count'].some((k) => measure.includes(k))) return;
       }
+      const country = countryI !== null && cells.length > countryI ? cells[countryI].trim() : '';
       const region = regionI !== null ? cells[regionI].trim() : '';
       const city = cells[cityI].trim();
       const count = toNumber(cells[valueI]);
       if (!city || count === null) return;
       if (looksLikeNonSite(city)) return;
-      const key = `${region}|${city}`;
+      const key = `${country}|${region}|${city}`;
       const current = agg.get(key) || 0;
       agg.set(key, useMax ? Math.max(current, Math.trunc(count)) : current + Math.trunc(count));
     });
     return Array.from(agg.entries()).map(([key, count]) => {
-      const [region, city] = key.split('|');
+      const [country, region, city] = key.split('|');
       const state = abbrevState(region);
-      return { location: state ? `${city}, ${state}` : city, state, city, count };
+      return { location: state ? `${city}, ${state}` : city, country, state, city, count };
     });
   }
 
@@ -908,7 +936,7 @@
     const finiteClass = data.finite_licenses.length > 8 ? 'finite-table ultra-dense' : data.finite_licenses.length > 5 ? 'finite-table dense' : 'finite-table';
     const finiteRows = data.finite_licenses.length ? data.finite_licenses.map((r) => `<tr><td class="qty">${fmt(r.count)}</td><td>${esc(r.license_name)}</td><td class="muted">${esc(r.license_type)}</td></tr>`).join('') : '';
     const finite = finiteRows ? table(['QTY', 'LICENSE', 'TYPE'], finiteRows, finiteClass) : '<div class="empty">No finite licenses provided</div>';
-    const locRows = data.locations_top5.map((r) => `<tr><td>${esc(r.state)}</td><td>${esc(r.city || r.location)}</td><td class="qty">${fmt(r.count)}</td></tr>`).join('');
+    const locRows = data.locations_top5.map((r) => `<tr><td>${esc(r.country || '')}</td><td>${esc(r.state || '')}</td><td>${esc(r.city || r.location)}</td><td class="qty">${fmt(r.count)}</td></tr>`).join('');
     const verRows = data.versions_top5.map((r) => `<tr><td>${esc(r.product)}</td><td>${fmt(r.product_total ?? r.users)}</td><td>${esc(r.version)}</td><td class="qty">${r.pct}%</td></tr>`).join('');
     return `
       <div class="slide-header"><div><div class="slide-label">Enterprise Agreement</div><div class="slide-title">${esc(data.service_id || 'EA')} · ${esc(data.customer || 'Customer')}</div></div><div class="updated">Updated ${esc(data.updated_date)}</div></div>
@@ -923,7 +951,7 @@
           ${card('Software Usage Data', `<div class="stats"><div class="stat accent"><div class="big">${fmt(stats.max_total)}</div><div class="lbl">Peak machines</div><div class="per">${esc(stats.max_period)}</div></div><div class="stat"><div class="big">${fmt(stats.min_total)}</div><div class="lbl">Min machines</div><div class="per">${esc(stats.min_period)}</div></div></div><div class="strip"><span>Avg quarterly increase</span><span class="pct">${stats.avg_pct_change >= 0 ? '+' : ''}${stats.avg_pct_change.toFixed(1)}%</span></div>`)}
         </div>
         <div class="col right">
-          ${card('Top Site Locations', locRows ? table(['STATE', 'CITY', 'MACHINES'], locRows, 'site-table') : '<div class="empty">No location data</div>')}
+          ${card('Top Site Locations', locRows ? table(['COUNTRY', 'STATE', 'CITY', 'COUNT'], locRows, 'site-table') : '<div class="empty">No location data</div>')}
           ${card('Version Usage', verRows ? table(['PRODUCT', 'TOTAL', 'TOP VER.', '%'], verRows, 'version-table') : '<div class="empty">No version data</div>')}
           ${card('Training Credit Usage', `<div class="stats3"><div><div class="lbl">Purchased</div><div class="med">${fmt(data.credits.purchased)}</div></div><div><div class="lbl">Used</div><div class="med">${fmt(data.credits.used)}</div></div><div><div class="lbl">Utilized</div><div class="med">${data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`}</div></div></div>`)}
           ${card('Technical Support', `<b>${esc(data.support.tier || '—')}</b><span class="scope">${esc(data.support.scope || '')}</span>${data.support.systemlink_snow ? '<b class="snow">SystemLink Support (SNOW)</b>' : ''}`, 'support-card')}
@@ -1845,11 +1873,12 @@
     const tablesH = 3.8;
     const hLoc = tablesH * (nLoc + 1) / (nLoc + nVer + 2);
     area = addCard(slide, pptx, 'Top Site Locations', rightX, top, colW, hLoc);
-    addSimpleTable(slide, pptx, ['STATE', 'CITY', 'MACHINES'], data.locations_top5.map((r) => [
+    addSimpleTable(slide, pptx, ['COUNTRY', 'STATE', 'CITY', 'COUNT'], data.locations_top5.map((r) => [
+      { text: r.country || '' },
       { text: r.state || '' },
       { text: r.city || r.location || '' },
       { text: fmt(r.count), bold: true, color: PPT.accent, align: 'right' }
-    ]), area, [0.22, 0.48, 0.3], { fitAll: true, minFontSize: 6.2 });
+    ]), area, [0.27, 0.17, 0.34, 0.22], { fitAll: true, minFontSize: 5.2, minHeaderSize: 4.8 });
     area = addCard(slide, pptx, 'Version Usage', rightX, top + hLoc + 0.12, colW, tablesH - hLoc);
     addSimpleTable(slide, pptx, ['PRODUCT', 'TOTAL', 'TOP VER.', '%'], data.versions_top5.map((r) => [
       { text: r.product || '' },

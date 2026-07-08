@@ -543,35 +543,39 @@ def _locations_card(slide, x, y, w, h, data):
     if not rows:
         _empty_note(slide, ix, iy, iw, ih, "No location data")
         return
-    headers = ["STATE", "CITY", "MACHINES"]
-    col_fracs = (0.22, 0.48, 0.30)
+    headers = ["COUNTRY", "STATE", "CITY", "COUNT"]
+    col_fracs = (0.27, 0.17, 0.34, 0.22)
     iw_in = int(iw) / 914400
     ih_in = int(ih) / 914400
     col_ws_in = [iw_in * f for f in col_fracs]
     row_texts = [headers] + [
-        [r.get("state", ""), r.get("city") or r.get("location", ""),
+        [r.get("country", ""), r.get("state", ""),
+         r.get("city") or r.get("location", ""),
          f"{int(r.get('count', 0)):,}"] for r in rows]
     body_size = _fit_table_font(row_texts, col_ws_in, ih_in,
-                                base=7.6, minimum=5.4)
-    table = slide.shapes.add_table(len(rows) + 1, 3, ix, iy, iw, ih).table
+                                base=7.2, minimum=5.0)
+    table = slide.shapes.add_table(len(rows) + 1, 4, ix, iy, iw, ih).table
     _style_table(table)
     table.columns[0].width = Emu(int(iw * col_fracs[0]))
     table.columns[1].width = Emu(int(iw * col_fracs[1]))
     table.columns[2].width = Emu(int(iw * col_fracs[2]))
+    table.columns[3].width = Emu(int(iw * col_fracs[3]))
     _set_row_heights_fitted(table, row_texts, col_ws_in, ih, body_size)
 
     for c, htext in enumerate(headers):
         _cell(table.cell(0, c), htext, size=max(5.2, min(6.8, body_size - 0.4)),
               bold=True, color=WHITE,
               font=SANS, fill=DARK_GREEN,
-              align=PP_ALIGN.RIGHT if c == 2 else PP_ALIGN.LEFT)
+              align=PP_ALIGN.RIGHT if c == 3 else PP_ALIGN.LEFT)
     for r, row in enumerate(rows, start=1):
         shade = LIGHT_TINT if r % 2 == 0 else WHITE
-        _cell(table.cell(r, 0), row.get("state", ""), size=body_size,
+        _cell(table.cell(r, 0), row.get("country", ""), size=body_size,
               color=DARK_GREEN, fill=shade)
-        _cell(table.cell(r, 1), row.get("city") or row.get("location", ""),
+        _cell(table.cell(r, 1), row.get("state", ""), size=body_size,
+              color=DARK_GREEN, fill=shade)
+        _cell(table.cell(r, 2), row.get("city") or row.get("location", ""),
               size=body_size, color=DARK_GREEN, fill=shade)
-        _cell(table.cell(r, 2), f"{int(row.get('count', 0)):,}", size=body_size,
+        _cell(table.cell(r, 3), f"{int(row.get('count', 0)):,}", size=body_size,
               bold=True, color=ACCENT_GREEN, align=PP_ALIGN.RIGHT, fill=shade)
 
 
