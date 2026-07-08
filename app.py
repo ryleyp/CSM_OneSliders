@@ -1,8 +1,7 @@
 """app.py — ea-slide-builder (Streamlit UI)
 
-A single-page, local-only tool that turns pasted BI tables + three contract
-screenshots into a polished 16:9 EA one-slider (.pptx) plus on-page CSM
-insights.
+A single-page, local-only tool that turns pasted BI tables + contract review
+blanks into a polished 16:9 EA one-slider (.pptx) plus on-page CSM insights.
 
 Runs entirely on the user's PC. No outbound network calls, no telemetry (see
 .streamlit/config.toml). Bound to localhost by default — private to this
@@ -11,14 +10,13 @@ machine.
 Flow (top to bottom):
   Profiles — save/load everything entered for an account; batch-generate decks
   PART 1  — paste three tab-separated tables (machine count, locations, versions)
-  PART 2  — upload screenshots; OCR fills EDITABLE fields the user reviews
+  PART 2  — type contract review blanks
   PART 3  — Generate: on-page preview, .pptx download, CSM insights
 """
 
 from __future__ import annotations
 
 import platform
-import shutil
 import sys
 from datetime import date
 
@@ -28,7 +26,6 @@ import streamlit.components.v1 as components
 
 import data_processor as dp
 import profiles as prof
-import screenshot_reader as sr
 from insights import generate_insights
 from preview import generate_preview_html
 from slide_builder import build_deck, build_slide
@@ -43,16 +40,9 @@ st.set_page_config(page_title="EA Slide Builder", page_icon="📊",
 st.title("📊 EA Slide Builder")
 st.caption(
     "Runs **fully offline** on this PC — no internet, no telemetry, no external "
-    "APIs. Paste your tables, upload the screenshots, review every parsed "
-    "value, then generate the one-slider."
+    "APIs. Paste your tables, fill the contract blanks, review the values, "
+    "then generate the one-slider."
 )
-
-
-def _file_id(uploaded) -> str | None:
-    """Stable id for an uploaded file so we only re-OCR when it changes."""
-    if uploaded is None:
-        return None
-    return f"{uploaded.name}:{uploaded.size}"
 
 
 def _editor_nonce() -> int:
@@ -109,9 +99,6 @@ def _load_example(key: str, text: str) -> None:
 with st.expander("🔧 System check", expanded=False):
     import pptx as _pptx
     import PIL as _pil
-    tess_path = shutil.which("tesseract")
-    tess_status = f"found at {tess_path}" if tess_path else \
-        "NOT FOUND — screenshot OCR disabled (fields can be typed manually)"
     preview_status = preview_renderer_status()
     preview_label = "available via macOS Quick Look" if preview_status["available"] else \
         "HTML preview available; PPTX image renderer not found"
@@ -119,7 +106,6 @@ with st.expander("🔧 System check", expanded=False):
         f"- Python **{platform.python_version()}** ({sys.executable})\n"
         f"- Streamlit **{st.__version__}** · pandas **{pd.__version__}** · "
         f"python-pptx **{_pptx.__version__}** · Pillow **{_pil.__version__}**\n"
-        f"- Tesseract OCR: **{tess_status}**\n"
         f"- PPTX image preview: **{preview_label}**\n"
         f"- Platform: {platform.platform()}\n"
         f"- Profiles folder: `{prof.PROFILES_DIR}`"
@@ -330,111 +316,16 @@ with st.expander("Preview parsed tables", expanded=False):
         st.dataframe(versions_df, width="stretch", hide_index=True)
 
 # =========================================================================== #
-# PART 2 — Screenshots + review blanks (OCR -> editable fields)
+# PART 2 — Contract review blanks
 # =========================================================================== #
-st.header("Part 2 · Source screenshots & review blanks")
-st.warning("OCR is imperfect. **Every** value below is editable — review and "
-           "correct everything before generating.")
-st.caption("Upload screenshots for reference or type the screenshot values into "
-           "the blanks below. Screenshots B and C are optional — skip either "
-           "one and its card is simply left out of the slide.")
+st.header("Part 2 · Contract review blanks")
+st.warning("Every value below is editable — review and correct everything "
+           "before generating.")
+st.caption("Type the values directly from Exhibit A, the finite-license table, "
+           "and the unlimited-bundle table. No image files are required.")
 
-up1, up2, up3 = st.columns(3)
-with up1:
-    img_a = st.file_uploader("Screenshot A — Contract details",
-                             type=["png", "jpg", "jpeg", "bmp", "tiff"])
-with up2:
-    img_b = st.file_uploader("Screenshot B — Finite licenses (optional)",
-                             type=["png", "jpg", "jpeg", "bmp", "tiff"])
-with up3:
-    img_c = st.file_uploader("Screenshot C — Unlimited bundles (optional)",
-                             type=["png", "jpg", "jpeg", "bmp", "tiff"])
-
-
-def _ocr_once(uploaded, state_key: str) -> str:
-    """OCR an upload once (with word confidences) and cache the result,
-    re-running only when the file changes."""
-    fid = _file_id(uploaded)
-    if fid is None:
-        return st.session_state.get(state_key + "_text", "")
-    if st.session_state.get(state_key + "_fid") != fid:
-        try:
-            detail = sr.ocr_image_detailed(uploaded)
-        except RuntimeError as exc:
-            st.error(str(exc))
-            detail = {"text": "", "words": []}
-        st.session_state[state_key + "_text"] = detail["text"]
-        st.session_state[state_key + "_words"] = detail["words"]
-        st.session_state[state_key + "_fid"] = fid
-        st.session_state[state_key + "_new"] = True
-    return st.session_state.get(state_key + "_text", "")
-
-
-_FIELD_LABELS = {
-    "service_id": "EA/EP Service ID", "customer": "Customer / Company",
-    "start_date": "Start / Effective Date", "ep_term": "EP Term",
-    "flex_credits": "FLEX credits purchased", "support_level": "Support tier",
-    "debug_licenses": "Debug licenses",
-}
-
-
-def _confidence_report(parsed: dict, words: list[dict]) -> tuple[list, list]:
-    """Split parsed contract fields into low-confidence and not-found lists."""
-    low, missing = [], []
-    for key, label in _FIELD_LABELS.items():
-        value = parsed.get(key, "")
-        if not value:
-            missing.append(label)
-            continue
-        conf = sr.field_confidence(words, value)
-        if conf is not None and conf < 70:
-            low.append(f"{label} ({conf:.0f}%)")
-    return low, missing
-
-
-# --- Screenshot A: Contract details ---------------------------------------- #
-st.subheader("Screenshot A · Contract details blanks")
-text_a = _ocr_once(img_a, "a")
-if st.session_state.pop("a_new", False):
-    parsed = sr.parse_contract_details(text_a)
-    # Seed editable widget state only with values OCR actually found. This
-    # keeps an imperfect OCR pass from wiping reviewed/profile-loaded fields.
-    field_map = {
-        "service_id": "f_service_id",
-        "customer": "f_customer",
-        "start_date": "f_start_date",
-        "ep_term": "f_ep_term",
-        "flex_credits": "f_flex_purchased",
-        "support_level": "f_support_tier",
-        "debug_licenses": "f_debug",
-    }
-    for parsed_key, state_key in field_map.items():
-        value = parsed.get(parsed_key)
-        if value:
-            st.session_state[state_key] = value
-    st.session_state.setdefault("f_debug", "No")
-    if parsed.get("systemlink_snow"):
-        st.session_state["f_systemlink_snow"] = True
-    # Compute suggested End Date + Phase from Start Date + EP Term.
-    start = dp.parse_date(st.session_state.get("f_start_date", ""))
-    term = dp.parse_term_years(st.session_state.get("f_ep_term", ""))
-    end = dp.compute_end_date(start, term)
-    ph = dp.compute_phase(start, term)
-    st.session_state["f_end_date"] = end.strftime("%d-%b-%Y").upper() if end else ""
-    st.session_state["f_phase"] = ph["phase"]
-    st.session_state["f_phase_hint"] = ph["hint"]
-    low, missing = _confidence_report(
-        parsed, st.session_state.get("a_words", []))
-    st.session_state["a_report"] = (low, missing)
-
-# Review-focus warnings from the last OCR run.
-if st.session_state.get("a_report"):
-    low, missing = st.session_state["a_report"]
-    if low:
-        st.warning("⚠️ Low OCR confidence — double-check: " + ", ".join(low))
-    if missing:
-        st.info("Not found in the screenshot — enter manually: "
-                + ", ".join(missing))
+# --- Exhibit A: Contract details ------------------------------------------- #
+st.subheader("Exhibit A · Contract details blanks")
 
 
 def _recompute_end_phase():
@@ -453,16 +344,7 @@ def _recompute_end_phase():
     st.session_state["f_phase_hint"] = ph["hint"]
 
 
-img_col_a, fields_col_a = st.columns([2, 3])
-with img_col_a:
-    if img_a is not None:
-        st.image(img_a, caption="Screenshot A (for side-by-side review)",
-                 width="stretch")
-    else:
-        st.caption("Upload Screenshot A to review it side-by-side here, or "
-                   "type the fields directly.")
-
-with fields_col_a:
+with st.container():
     fa1, fa2 = st.columns(2)
     with fa1:
         st.text_input("EA/EP Service ID", key="f_service_id",
@@ -515,29 +397,13 @@ with tc3:
     else:
         st.caption("Enter purchased + used to see % used.")
 
-with st.expander("Raw OCR text — Screenshot A"):
-    st.text(text_a or "(no text yet)")
-
-# --- Screenshot B: Finite licenses ----------------------------------------- #
-st.subheader("Screenshot B · Finite license blanks (optional)")
-text_b = _ocr_once(img_b, "b")
-if st.session_state.pop("b_new", False):
-    rows = sr.parse_finite_licenses(text_b)
-    st.session_state["finite_seed"] = pd.DataFrame(
-        rows or [], columns=["count", "license_type", "license_name"]
-    )
-    _bump_editor_nonce()
+# --- Finite licenses -------------------------------------------------------- #
+st.subheader("Finite license blanks (optional)")
 if "finite_seed" not in st.session_state:
     st.session_state["finite_seed"] = pd.DataFrame(
         columns=["count", "license_type", "license_name"]
     )
-img_col_b, ed_col_b = st.columns([2, 3])
-with img_col_b:
-    if img_b is not None:
-        st.image(img_b, caption="Screenshot B", width="stretch")
-    else:
-        st.caption("Optional — upload Screenshot B, or type rows directly.")
-with ed_col_b:
+with st.container():
     st.caption("Columns: count · license type · license name. "
                "Edit/add/remove rows.")
     finite_edit = st.data_editor(
@@ -550,30 +416,13 @@ with ed_col_b:
             "license_name": st.column_config.TextColumn("License Name"),
         },
     )
-with st.expander("Raw OCR text — Screenshot B"):
-    st.text(text_b or "(no text yet)")
-
-# --- Screenshot C: Unlimited bundles --------------------------------------- #
-st.subheader("Screenshot C · Unlimited bundle blanks (optional)")
-text_c = _ocr_once(img_c, "c")
-if st.session_state.pop("c_new", False):
-    bundles = sr.parse_unlimited_bundles(text_c)
-    st.session_state["bundle_seed"] = pd.DataFrame(
-        {"bundle_name": pd.Series(bundles or [], dtype="object")}
-    )
-    _bump_editor_nonce()
+# --- Unlimited bundles ------------------------------------------------------ #
+st.subheader("Unlimited bundle blanks (optional)")
 if "bundle_seed" not in st.session_state:
     st.session_state["bundle_seed"] = pd.DataFrame(
         {"bundle_name": pd.Series([], dtype="object")}
     )
-img_col_c, ed_col_c = st.columns([2, 3])
-with img_col_c:
-    if img_c is not None:
-        st.image(img_c, caption="Screenshot C", width="stretch")
-    else:
-        st.caption("Optional — upload Screenshot C, or type bundle names "
-                   "directly.")
-with ed_col_c:
+with st.container():
     st.caption("One bundle name per row (the name after the colon). "
                "Edit/add/remove.")
     bundle_edit = st.data_editor(
@@ -582,9 +431,6 @@ with ed_col_c:
         column_config={
             "bundle_name": st.column_config.TextColumn("Bundle Name")},
     )
-with st.expander("Raw OCR text — Screenshot C"):
-    st.text(text_c or "(no text yet)")
-
 # =========================================================================== #
 # PART 3 — Generate
 # =========================================================================== #

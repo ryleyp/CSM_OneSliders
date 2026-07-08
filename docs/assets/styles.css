@@ -195,7 +195,7 @@ button:hover { background: #02523a; }
 
 .contract-shot {
   grid-column: 1 / -1;
-  grid-template-columns: minmax(240px, .86fr) minmax(0, 2fr);
+  grid-template-columns: 1fr;
 }
 
 .shot-media,

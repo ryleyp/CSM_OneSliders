@@ -327,12 +327,14 @@ def test_github_pages_lite_security():
     check("pages lite index exists", "<title>EA Slide Builder Lite</title>" in index)
     check("pages lite has CSP", "Content-Security-Policy" in index)
     check("pages lite limits network to self", "connect-src 'self'" in index)
-    check("pages lite uses local OCR worker", "worker-src 'self'" in index)
+    check("pages lite keeps worker policy strict", "worker-src 'self'" in index)
     check("pages lite uses local script", 'src="assets/app.js"' in index)
     check("pages lite uses local stylesheet", 'href="assets/styles.css"' in index)
-    check("pages lite has screenshot uploads", 'id="screenshotA" type="file"' in index)
-    check("pages lite has guided screenshot blanks",
-          "Source Screenshots & Review Blanks" in index
+    check("pages lite has no screenshot uploads",
+          'id="screenshotA" type="file"' not in index
+          and "Run OCR" not in index)
+    check("pages lite has contract review blanks",
+          "Contract Review Blanks" in index
           and "Exhibit A blanks" in index)
     check("pages lite has finite and bundle blanks",
           "Finite license blanks" in index
@@ -345,15 +347,14 @@ def test_github_pages_lite_security():
           'id="bundleRows"' in index
           and 'id="addBundleRow"' in index
           and "renderBundleEditorRows" in app_js)
-    check("pages lite has contract auto-fill",
-          'id="autoContractOcr" type="checkbox" checked' in index)
     check("pages lite has systemlink snow option",
           'id="systemlinkSnow" type="checkbox"' in index)
     check("pages lite has PPTX generation", "downloadCurrentPptx" in app_js)
     check("pages lite has profile import/export", "currentProfilePayload" in app_js)
     check("pages lite has batch deck generation", "downloadBatchPptx" in app_js)
-    check("pages lite has browser OCR", "Tesseract.createWorker" in app_js)
-    check("pages lite disables OCR cache", "cacheMethod: 'none'" in app_js)
+    check("pages lite does not load browser OCR",
+          "tesseract.min.js" not in index
+          and "Browser OCR" not in index)
     check("pages lite has no external urls",
           "http://" not in combined and "https://" not in combined)
     check("pages lite has no browser storage",
@@ -361,22 +362,6 @@ def test_github_pages_lite_security():
     vendor = root / "docs" / "assets" / "vendor"
     check("pages lite vendors JSZip", (vendor / "jszip.min.js").is_file())
     check("pages lite vendors PptxGenJS", (vendor / "pptxgen.bundle.js").is_file())
-    check("pages lite vendors Tesseract API",
-          (vendor / "tesseract" / "tesseract.min.js").is_file())
-    check("pages lite vendors Tesseract worker",
-          (vendor / "tesseract" / "worker.min.js").is_file())
-    check("pages lite vendors English OCR data",
-          (vendor / "tesseract" / "lang" / "eng.traineddata.gz").is_file())
-    core = vendor / "tesseract" / "core"
-    for core_name in (
-        "tesseract-core.wasm.js",
-        "tesseract-core-lstm.wasm.js",
-        "tesseract-core-simd.wasm.js",
-        "tesseract-core-simd-lstm.wasm.js",
-        "tesseract-core-relaxedsimd.wasm.js",
-        "tesseract-core-relaxedsimd-lstm.wasm.js",
-    ):
-        check(f"pages lite vendors {core_name}", (core / core_name).is_file())
 
 
 # --------------------------------------------------------------------------- #

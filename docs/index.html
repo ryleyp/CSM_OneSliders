@@ -13,7 +13,7 @@
     <div>
       <p class="eyebrow">EA Slide Builder Lite</p>
       <h1>Browser-only EA slide builder</h1>
-      <p class="lede">A GitHub Pages-safe version for pasted tables, screenshot OCR, editable review, profiles, batch decks, local preview, local insights, and browser-generated PPTX files.</p>
+      <p class="lede">A GitHub Pages-safe version for pasted tables, contract blanks, editable review, profiles, batch decks, local preview, local insights, and browser-generated PPTX files.</p>
     </div>
     <div class="security-pill">No backend · No customer uploads · No external calls</div>
   </header>
@@ -21,8 +21,8 @@
   <main>
     <section class="security">
       <h2>Security Mode</h2>
-      <p>This static page runs entirely in your browser. It has no server-side processing, no profile storage, no telemetry, and no third-party scripts. Screenshots are read locally for browser OCR, preview, and optional source-evidence slides. Refreshing the page clears the entered data.</p>
-      <p class="small">Browser OCR loads static engine files from this same GitHub Pages site. Customer data, screenshots, profiles, and generated PPTX files are not uploaded to a server.</p>
+      <p>This static page runs entirely in your browser. It has no server-side processing, no profile storage, no telemetry, and no third-party scripts. Refreshing the page clears the entered data.</p>
+      <p class="small">Customer data, profiles, and generated PPTX files are not uploaded to a server.</p>
     </section>
 
     <section class="controls" aria-label="Profiles and batch decks">
@@ -44,22 +44,10 @@
 
     <section class="controls" aria-label="Data entry">
       <div class="panel wide">
-        <h2>Source Screenshots & Review Blanks</h2>
-        <p class="small">Upload a screenshot for reference or fill the blanks directly. OCR can seed these fields, but the blanks below are what the preview and PPTX use.</p>
-        <label class="check"><input id="autoContractOcr" type="checkbox" checked> Auto-fill contract fields from Screenshot A</label>
+        <h2>Contract Review Blanks</h2>
+        <p class="small">Enter the contract values directly from Exhibit A, the finite-license table, and the unlimited-bundle table. These blanks are what the preview and PPTX use.</p>
         <div class="shot-review-grid">
           <article class="shot-card contract-shot">
-            <div class="shot-media">
-              <h3>Screenshot A — Contract details</h3>
-              <label>Source image<input id="screenshotA" type="file" accept="image/png,image/jpeg,image/webp,image/bmp"></label>
-              <span id="shotPreviewA" class="shot-preview">No image selected</span>
-              <button id="ocrA" type="button">Run OCR</button>
-              <span id="ocrStatusA" class="small"></span>
-              <details>
-                <summary>Raw OCR text</summary>
-                <textarea id="ocrRawA" spellcheck="false"></textarea>
-              </details>
-            </div>
             <div class="manual-fields">
               <div class="manual-section">
                 <h3>Exhibit A blanks</h3>
@@ -94,17 +82,6 @@
           </article>
 
           <article class="shot-card">
-            <div class="shot-media">
-              <h3>Screenshot B — Finite licenses</h3>
-              <label>Source image<input id="screenshotB" type="file" accept="image/png,image/jpeg,image/webp,image/bmp"></label>
-              <span id="shotPreviewB" class="shot-preview">No image selected</span>
-              <button id="ocrB" type="button">Run OCR</button>
-              <span id="ocrStatusB" class="small"></span>
-              <details>
-                <summary>Raw OCR text</summary>
-                <textarea id="ocrRawB" spellcheck="false"></textarea>
-              </details>
-            </div>
             <div class="editable-table-block">
               <div class="editor-toolbar">
                 <div>
@@ -119,17 +96,6 @@
           </article>
 
           <article class="shot-card">
-            <div class="shot-media">
-              <h3>Screenshot C — Unlimited bundles</h3>
-              <label>Source image<input id="screenshotC" type="file" accept="image/png,image/jpeg,image/webp,image/bmp"></label>
-              <span id="shotPreviewC" class="shot-preview">No image selected</span>
-              <button id="ocrC" type="button">Run OCR</button>
-              <span id="ocrStatusC" class="small"></span>
-              <details>
-                <summary>Raw OCR text</summary>
-                <textarea id="ocrRawC" spellcheck="false"></textarea>
-              </details>
-            </div>
             <div class="editable-table-block">
               <div class="editor-toolbar">
                 <div>
@@ -174,7 +140,6 @@
       <button id="printPage" type="button">Print / Save PDF</button>
       <button id="clearAll" type="button">Clear Data</button>
       <label class="check"><input id="includeInsights" type="checkbox" checked> Include CSM Insights slide</label>
-      <label class="check"><input id="includeScreenshots" type="checkbox" checked> Include source screenshots slide</label>
     </section>
     <div id="appStatus" class="app-status" role="status" aria-live="polite"></div>
 
@@ -192,12 +157,11 @@
   </main>
 
   <footer>
-    <p>GitHub Pages Lite version. Source code only is hosted; entered data and selected screenshots stay in this browser session.</p>
+    <p>GitHub Pages Lite version. Source code only is hosted; entered data stays in this browser session.</p>
   </footer>
 
   <script src="assets/vendor/jszip.min.js"></script>
   <script src="assets/vendor/pptxgen.bundle.js"></script>
-  <script src="assets/vendor/tesseract/tesseract.min.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>

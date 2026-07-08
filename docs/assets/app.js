@@ -1917,7 +1917,7 @@
       const pptx = newPresentation();
       addEaSlide(pptx, data);
       if ($('includeInsights').checked) addInsightsSlide(pptx, data, generateInsights(data));
-      if ($('includeScreenshots').checked) addScreenshotsSlide(pptx, data, Object.values(uploadedShots).filter(Boolean));
+      if ($('includeScreenshots') && $('includeScreenshots').checked) addScreenshotsSlide(pptx, data, Object.values(uploadedShots).filter(Boolean));
       await writePresentation(pptx, `${safeFileName(`${data.service_id || 'EA'}_${data.customer || 'customer'}`)}.pptx`);
     } catch (err) {
       setStatus(err.message || String(err), 'error');
@@ -1952,7 +1952,7 @@
     $('debugLicenses').value = 'No';
     Object.entries(SHOT_META).forEach(([key, meta]) => {
       uploadedShots[key] = null;
-      $(meta.previewId).textContent = 'No image selected';
+      if ($(meta.previewId)) $(meta.previewId).textContent = 'No image selected';
       setOcrStatus(key, '');
     });
     setFiniteText('', false);
@@ -1971,11 +1971,11 @@
   $('printPage').addEventListener('click', () => window.print());
   $('clearAll').addEventListener('click', clearAll);
   Object.entries(SHOT_META).forEach(([key, meta]) => {
-    $(meta.inputId).addEventListener('change', () => handleScreenshotInput(key));
+    if ($(meta.inputId)) $(meta.inputId).addEventListener('change', () => handleScreenshotInput(key));
   });
-  $('ocrA').addEventListener('click', () => runOcr('a'));
-  $('ocrB').addEventListener('click', () => runOcr('b'));
-  $('ocrC').addEventListener('click', () => runOcr('c'));
+  if ($('ocrA')) $('ocrA').addEventListener('click', () => runOcr('a'));
+  if ($('ocrB')) $('ocrB').addEventListener('click', () => runOcr('b'));
+  if ($('ocrC')) $('ocrC').addEventListener('click', () => runOcr('c'));
   document.querySelectorAll('input, textarea, select').forEach((el) => {
     if (el.closest('.row-editor') || el.classList.contains('source-data')) return;
     el.addEventListener('input', render);

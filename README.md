@@ -2,9 +2,9 @@
 
 A small, **fully offline** web app for building Enterprise Agreement (EA)
 one-slider PowerPoint slides. You run it on **your** PC, private to that machine
-by default. Paste a few tables, upload three contract screenshots, review the
-auto-parsed values, and click **Generate Slide** to get a polished 16:9 `.pptx`
-plus on-page CSM insights.
+by default. Paste a few tables, fill the contract blanks, review the values,
+and click **Generate Slide** to get a polished 16:9 `.pptx` plus on-page CSM
+insights.
 
 > **Runs fully offline.** The app makes **no** network calls to outside services
 > or external APIs. No telemetry, no "phone home." All data stays on your
@@ -27,11 +27,11 @@ plus on-page CSM insights.
   second slide in the .pptx (on by default).
 - **GitHub Pages browser version** — a static, browser-only companion in
   `docs/` for hosted use through GitHub Pages. It supports pasted tables,
-  screenshot upload, browser-side OCR, editable review fields, local insights,
-  `.pptx` generation, profile JSON import/export, and batch decks. It has no
-  backend, no telemetry, no CDN, and no customer-data upload.
+  contract review blanks, editable finite/unlimited license rows, local
+  insights, `.pptx` generation, profile JSON import/export, and batch decks. It
+  has no backend, no telemetry, no CDN, and no customer-data upload.
 - **System check** — an expander at the top shows Python/package versions and
-  whether Tesseract and the local PPTX preview renderer are installed, for easy
+  whether the local PPTX preview renderer is installed, for easy
   troubleshooting.
 - **Part 1 — Paste tables** (tab-separated, copied straight from Excel):
   1. **Machine Count** — New & Existing machines over time (period, new, existing)
@@ -39,19 +39,15 @@ plus on-page CSM insights.
   3. **Usage Versions** — product, version, user count
   Each table includes a **Load example** button so users can see the expected
   paste shape without leaving the app.
-- **Part 2 — Upload screenshots** (B and C optional), read locally with OCR
-  (Tesseract via `pytesseract`, with automatic image preprocessing). Each
-  screenshot shows **side-by-side** with its fields, low-confidence values are
-  flagged for review, and **every** parsed value lands in an **editable field
-  you review and correct** before generating. OCR is imperfect — this review
-  step is mandatory.
-  - **Screenshot A — Contract details**: EA/EP Service ID, customer, start date,
-    EP term, FLEX credits, support level, debug licenses. The app **computes a
-    suggested EA End Date** (the inclusive final day of the EP term) and the
-    **Phase** (Not started / First Half / Second Half / Expired, with a "Year X
-    of N" hint) — all editable.
-  - **Screenshot B — Finite licenses**: count, license type, license name.
-  - **Screenshot C — Unlimited bundles**: bundle names.
+- **Part 2 — Contract review blanks**:
+  - **Exhibit A details**: EA/EP Service ID, customer, start date, EP term,
+    FLEX credits, support level, debug licenses, and SystemLink Support (SNOW).
+    The app **computes a suggested EA End Date** (the inclusive final day of
+    the EP term) and the **Phase** (Not started / First Half / Second Half /
+    Expired, with a "Year X of N" hint) — all editable.
+  - **Finite licenses**: add/remove rows for count, license type, and license
+    name.
+  - **Unlimited bundles**: add/remove bundle-name rows.
 - **Part 3 — Generate Slide**: download the `.pptx` and read the CSM insights
   (computed locally — no LLM, no network).
 
@@ -94,21 +90,6 @@ pip install -r requirements.txt
 Pinned packages: `streamlit`, `pandas`, `python-pptx`, `openpyxl`,
 `pytesseract`, `Pillow`.
 
-### 2. Install system Tesseract OCR (separate, required for screenshots)
-
-`pytesseract` is only a thin wrapper — the actual OCR engine, **Tesseract, must
-be installed separately** as a system package:
-
-- **Windows**: install the [UB Mannheim Tesseract build](https://github.com/UB-Mannheim/tesseract/wiki)
-  and make sure `tesseract.exe` is on your `PATH` (or set
-  `pytesseract.pytesseract.tesseract_cmd`).
-- **macOS**: `brew install tesseract`
-- **Debian/Ubuntu**: `sudo apt-get install tesseract-ocr`
-- **Fedora**: `sudo dnf install tesseract`
-
-If Tesseract is missing, the app still runs — it just shows a clear message and
-you can type the screenshot values into the editable fields manually.
-
 ---
 
 ## Running it
@@ -143,15 +124,14 @@ So if your IP is `192.168.1.42`, teammates go to `http://192.168.1.42:8501`.
 The repository also includes a static hosted-safe version in `docs/`.
 
 - It is browser-only HTML/CSS/JavaScript.
-- It lets users select screenshots locally, runs OCR in the browser, and fills
-  editable review fields.
+- It provides direct contract review blanks and editable finite/unlimited
+  license rows.
 - It generates PowerPoint files in the browser with vendored PptxGenJS/JSZip.
 - It supports profiles as explicit JSON export/import files and can build a
   batch deck from multiple exported profile JSON files.
-- It uses no external scripts, fonts, images, APIs, or CDNs; browser OCR assets
-  are vendored under `docs/assets/vendor/tesseract/`.
+- It uses no external scripts, fonts, images, APIs, or CDNs.
 - Its Content Security Policy allows only same-origin static asset loading
-  (`connect-src 'self'`) so the OCR engine can load its local worker/core/data.
+  (`connect-src 'self'`).
 - It does not use local/session storage or a hidden server-side profile folder.
 
 Because GitHub Pages is a hosted URL, the local launcher remains the strictest
@@ -163,12 +143,11 @@ on trusted machines and approved networks.
 
 - **Default is private** — the app is reachable **only on this machine**. Your
   data, including any contract info you enter, stays here.
-- **GitHub is for source code only.** Do not commit real screenshots, generated
-  slides, saved profiles, exports, or contract/customer data. The repository
-  ignore rules are set up to keep those local artifacts out of git.
-- **Keep contract data in-house.** Don't post the screenshots or generated
-  slide to public locations; share the finished slide only via approved internal
-  channels.
+- **GitHub is for source code only.** Do not commit generated slides, saved
+  profiles, exports, or contract/customer data. The repository ignore rules are
+  set up to keep those local artifacts out of git.
+- **Keep contract data in-house.** Don't post generated slides to public
+  locations; share the finished slide only via approved internal channels.
 - **Never expose it to the public internet** — no port-forwarding or tunneling.
 - The app is **only reachable while your PC is on and the app is running.**
 
@@ -179,7 +158,7 @@ on trusted machines and approved networks.
 This app runs **fully offline**. It does not contact any external service or
 API, sends no telemetry, and never phones home. Streamlit's anonymous usage
 stats are disabled in `.streamlit/config.toml` (`gatherUsageStats = false`).
-All parsing, OCR, slide building, and insight generation happen locally.
+All parsing, slide building, and insight generation happen locally.
 
 ---
 
