@@ -131,16 +131,15 @@ def _finite_card(data) -> str:
     if not rows:
         return _card("NI SW Licenses (Finite Qty)",
                      '<div class="empty">No finite licenses provided</div>')
+    density = " ultra-dense" if len(rows) > 8 else " dense" if len(rows) > 5 else ""
     body_rows = "".join(
         f'<tr><td class="qty">{_fmt(r.get("count"))}</td>'
         f'<td>{_e(r.get("license_name"))}</td>'
         f'<td class="type">{_e(r.get("license_type"))}</td></tr>'
-        for r in rows[:10])
-    more = (f'<div class="more">+{len(rows) - 10} more not shown</div>'
-            if len(rows) > 10 else "")
+        for r in rows)
     return _card("NI SW Licenses (Finite Qty)",
-                 f'<table><tr><th>QTY</th><th>LICENSE</th><th>TYPE</th></tr>'
-                 f"{body_rows}</table>{more}")
+                 f'<table class="finite-table{density}"><tr><th>QTY</th>'
+                 f'<th>LICENSE</th><th>TYPE</th></tr>{body_rows}</table>')
 
 
 def _trend_card(data) -> str:
@@ -184,13 +183,14 @@ def _versions_card(data) -> str:
     if not rows:
         return _card("Version Usage", '<div class="empty">No version data</div>')
     body_rows = "".join(
-        f'<tr><td>{_e(r.get("product"))}</td><td>{_e(r.get("version"))}</td>'
-        f'<td style="text-align:right">{_fmt(r.get("users"))}</td>'
+        f'<tr><td>{_e(r.get("product"))}</td>'
+        f'<td style="text-align:right">{_fmt(r.get("product_total", r.get("users")))}</td>'
+        f'<td>{_e(r.get("version"))}</td>'
         f'<td class="qty" style="text-align:right">{int(r.get("pct", 0))}%</td></tr>'
         for r in rows[:5])
     return _card("Version Usage",
-                 f'<table><tr><th>PRODUCT</th><th>VER.</th>'
-                 f'<th style="text-align:right">USED</th>'
+                 f'<table class="version-table"><tr><th>PRODUCT</th>'
+                 f'<th style="text-align:right">TOTAL</th><th>TOP VER.</th>'
                  f'<th style="text-align:right">%</th></tr>{body_rows}</table>')
 
 
@@ -259,6 +259,23 @@ def generate_preview_html(data: dict) -> str:
         padding: 4px 6px; text-align: left; }}
       td {{ padding: 4px 6px; color: {DARK}; }}
       tr:nth-child(odd) td {{ background: {TINT}; }}
+      .finite-table, .version-table {{ table-layout: fixed; }}
+      .finite-table th, .finite-table td, .version-table th, .version-table td {{
+        overflow-wrap: anywhere; line-height: 1.12; }}
+      .finite-table th, .finite-table td {{ padding: 3px 4px; }}
+      .finite-table th:nth-child(1), .finite-table td:nth-child(1) {{ width: 14%; }}
+      .finite-table th:nth-child(2), .finite-table td:nth-child(2) {{ width: 56%; }}
+      .finite-table th:nth-child(3), .finite-table td:nth-child(3) {{ width: 30%; }}
+      .finite-table.dense {{ font-size: 8px; }}
+      .finite-table.ultra-dense {{ font-size: 7px; }}
+      .finite-table.dense th, .finite-table.dense td,
+      .finite-table.ultra-dense th, .finite-table.ultra-dense td {{ padding: 2px 3px; }}
+      .version-table {{ font-size: 8.5px; }}
+      .version-table th, .version-table td {{ padding: 3px 4px; }}
+      .version-table th:nth-child(1), .version-table td:nth-child(1) {{ width: 38%; }}
+      .version-table th:nth-child(2), .version-table td:nth-child(2) {{ width: 19%; }}
+      .version-table th:nth-child(3), .version-table td:nth-child(3) {{ width: 27%; }}
+      .version-table th:nth-child(4), .version-table td:nth-child(4) {{ width: 16%; }}
       td.qty {{ color: {ACCENT}; font-weight: 700; }}
       td.type {{ color: {GRAY}; font-size: 9px; }}
       .more {{ font-size: 9px; color: {GRAY}; text-align: right; margin-top: 3px; }}

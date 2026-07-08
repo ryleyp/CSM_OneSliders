@@ -287,6 +287,7 @@
       const count = toNumber(cells[cells.length - 1]);
       if (!cells[0] || count === null) return null;
       const split = splitLocation(cells[0]);
+      if (looksLikeNonSite(split.city || cells[0])) return null;
       return { location: cells[0], state: split.state, city: split.city, count: Math.trunc(count) };
     }).filter(Boolean);
   }
@@ -317,6 +318,7 @@
       const city = cells[cityI].trim();
       const count = toNumber(cells[valueI]);
       if (!city || count === null) return;
+      if (looksLikeNonSite(city)) return;
       const key = `${region}|${city}`;
       const current = agg.get(key) || 0;
       agg.set(key, useMax ? Math.max(current, Math.trunc(count)) : current + Math.trunc(count));
@@ -328,8 +330,22 @@
     });
   }
 
+  function looksLikeNonSite(value) {
+    const text = String(value || '').trim();
+    if (!text) return true;
+    const low = text.toLowerCase();
+    if (['*', 'all', 'total', 'grand total', 'subtotal', 'null', 'none'].includes(low)) return true;
+    if (/^\d{4}(?:\s+q[1-4])?$/.test(low)) return true;
+    if (/^q[1-4](?:\s+\d{4})?$/.test(low)) return true;
+    if (['new', 'existing', 'machine type', 'product_name', 'product version'].includes(low)) return true;
+    return false;
+  }
+
   function topLocations(locations, n = 5) {
-    return [...locations].sort((a, b) => b.count - a.count).slice(0, n);
+    return [...locations]
+      .filter((site) => !looksLikeNonSite(site.city || site.location))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, n);
   }
 
   function parseVersions(text) {
@@ -702,17 +718,19 @@
     return `<div class="card ${extra}"><div class="card-title">${esc(title)}</div>${body}</div>`;
   }
 
-  function table(headers, rowsHtml) {
-    return `<table><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${rowsHtml}</table>`;
+  function table(headers, rowsHtml, className = '') {
+    const cls = className ? ` class="${esc(className)}"` : '';
+    return `<table${cls}><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${rowsHtml}</table>`;
   }
 
   function renderSlide(data) {
     const stats = data.machine.stats;
     const bundles = data.bundles.length ? data.bundles.slice(0, 5).map((b) => `<div class="pill">${esc(b)}</div>`).join('') : '<div class="empty">No bundles provided</div>';
-    const finiteRows = data.finite_licenses.length ? data.finite_licenses.slice(0, 8).map((r) => `<tr><td class="qty">${fmt(r.count)}</td><td>${esc(r.license_name)}</td><td class="muted">${esc(r.license_type)}</td></tr>`).join('') : '';
-    const finite = finiteRows ? table(['QTY', 'LICENSE', 'TYPE'], finiteRows) : '<div class="empty">No finite licenses provided</div>';
+    const finiteClass = data.finite_licenses.length > 8 ? 'finite-table ultra-dense' : data.finite_licenses.length > 5 ? 'finite-table dense' : 'finite-table';
+    const finiteRows = data.finite_licenses.length ? data.finite_licenses.map((r) => `<tr><td class="qty">${fmt(r.count)}</td><td>${esc(r.license_name)}</td><td class="muted">${esc(r.license_type)}</td></tr>`).join('') : '';
+    const finite = finiteRows ? table(['QTY', 'LICENSE', 'TYPE'], finiteRows, finiteClass) : '<div class="empty">No finite licenses provided</div>';
     const locRows = data.locations_top5.map((r) => `<tr><td>${esc(r.state)}</td><td>${esc(r.city || r.location)}</td><td class="qty">${fmt(r.count)}</td></tr>`).join('');
-    const verRows = data.versions_top5.map((r) => `<tr><td>${esc(r.product)}</td><td>${esc(r.version)}</td><td>${fmt(r.users)}</td><td class="qty">${r.pct}%</td></tr>`).join('');
+    const verRows = data.versions_top5.map((r) => `<tr><td>${esc(r.product)}</td><td>${fmt(r.product_total ?? r.users)}</td><td>${esc(r.version)}</td><td class="qty">${r.pct}%</td></tr>`).join('');
     return `
       <div class="slide-header"><div><div class="slide-label">Enterprise Agreement</div><div class="slide-title">${esc(data.service_id || 'EA')} · ${esc(data.customer || 'Customer')}</div></div><div class="updated">Updated ${esc(data.updated_date)}</div></div>
       <div class="slide-grid">
@@ -726,8 +744,8 @@
           ${card('Software Usage Data', `<div class="stats"><div class="stat accent"><div class="big">${fmt(stats.max_total)}</div><div class="lbl">Peak machines</div><div class="per">${esc(stats.max_period)}</div></div><div class="stat"><div class="big">${fmt(stats.min_total)}</div><div class="lbl">Min machines</div><div class="per">${esc(stats.min_period)}</div></div></div><div class="strip"><span>Avg quarterly increase</span><span class="pct">${stats.avg_pct_change >= 0 ? '+' : ''}${stats.avg_pct_change.toFixed(1)}%</span></div>`)}
         </div>
         <div class="col right">
-          ${card('Top Site Locations', locRows ? table(['STATE', 'CITY', 'MACHINES'], locRows) : '<div class="empty">No location data</div>')}
-          ${card('Version Usage', verRows ? table(['PRODUCT', 'VER.', 'USED', '%'], verRows) : '<div class="empty">No version data</div>')}
+          ${card('Top Site Locations', locRows ? table(['STATE', 'CITY', 'MACHINES'], locRows, 'site-table') : '<div class="empty">No location data</div>')}
+          ${card('Version Usage', verRows ? table(['PRODUCT', 'TOTAL', 'TOP VER.', '%'], verRows, 'version-table') : '<div class="empty">No version data</div>')}
           ${card('Training Credit Usage', `<div class="stats3"><div><div class="lbl">Purchased</div><div class="med">${fmt(data.credits.purchased)}</div></div><div><div class="lbl">Used</div><div class="med">${fmt(data.credits.used)}</div></div><div><div class="lbl">Utilized</div><div class="med">${data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`}</div></div></div>`)}
           ${card('Technical Support', `<b>${esc(data.support.tier || '—')}</b><span class="scope">${esc(data.support.scope || '')}</span>`, 'support-card')}
         </div>
@@ -1446,18 +1464,23 @@
     });
   }
 
-  function addSimpleTable(slide, pptx, headers, rowsData, area, colW) {
+  function addSimpleTable(slide, pptx, headers, rowsData, area, colW, options = {}) {
     if (!rowsData.length) {
       addText(slide, 'No data provided', { x: area.x, y: area.y + 0.12, w: area.w, h: 0.24, fontSize: 8.5, color: PPT.gray, align: 'center' });
       return;
     }
-    const rowsToShow = rowsData.slice(0, Math.max(1, Math.floor((area.h - 0.28) / 0.27)));
-    const rowH = Math.min(0.31, area.h / (rowsToShow.length + 1));
+    const maxRows = Math.max(1, Math.floor((area.h - 0.28) / 0.27));
+    const rowsToShow = options.fitAll ? rowsData : rowsData.slice(0, maxRows);
+    const rowH = options.fitAll
+      ? area.h / (rowsToShow.length + 1)
+      : Math.min(0.31, area.h / (rowsToShow.length + 1));
+    const bodySize = options.fontSize || Math.max(options.minFontSize || 5.4, Math.min(7.4, rowH * 24));
+    const headerSize = Math.max(options.minHeaderSize || 5.2, Math.min(6.8, bodySize - 0.4));
     let x = area.x;
     headers.forEach((head, i) => {
       const cw = area.w * colW[i];
       addRect(slide, pptx, x, area.y, cw, rowH, PPT.dark, PPT.dark);
-      addText(slide, head, { x: x + 0.03, y: area.y + 0.04, w: cw - 0.06, h: rowH - 0.04, fontSize: 6.8, bold: true, color: PPT.white, align: i === headers.length - 1 ? 'right' : 'left' });
+      addText(slide, head, { x: x + 0.03, y: area.y + 0.04, w: cw - 0.06, h: Math.max(0.08, rowH - 0.04), fontSize: headerSize, bold: true, color: PPT.white, align: i === headers.length - 1 ? 'right' : 'left' });
       x += cw;
     });
     rowsToShow.forEach((row, r) => {
@@ -1467,7 +1490,7 @@
       row.forEach((cell, i) => {
         const cw = area.w * colW[i];
         addRect(slide, pptx, x, y, cw, rowH, fill, 'EEF1EF', 0.2);
-        addText(slide, cell.text, { x: x + 0.03, y: y + 0.04, w: cw - 0.06, h: rowH - 0.04, fontSize: cell.size || 7.4, bold: !!cell.bold, color: cell.color || PPT.dark, align: cell.align || 'left', valign: 'mid' });
+        addText(slide, cell.text, { x: x + 0.03, y: y + 0.03, w: cw - 0.06, h: Math.max(0.08, rowH - 0.03), fontSize: cell.size || bodySize, bold: !!cell.bold, color: cell.color || PPT.dark, align: cell.align || 'left', valign: 'mid' });
         x += cw;
       });
     });
@@ -1556,7 +1579,7 @@
         { text: fmt(r.count), bold: true, color: PPT.accent, align: 'right' },
         { text: r.license_name || '' },
         { text: r.license_type || '', color: PPT.gray, size: 6.8 }
-      ]), area, [0.16, 0.52, 0.32]);
+      ]), area, [0.14, 0.56, 0.30], { fitAll: true, minFontSize: 5.1 });
     } else if (!bundles.length) {
       area = addCard(slide, pptx, 'Licenses & Bundles', leftX, y, colW, 4.95);
       addText(slide, 'No license or bundle data provided', { x: area.x, y: area.y + 0.3, w: area.w, h: 0.3, fontSize: 8.5, color: PPT.gray, align: 'center' });
@@ -1572,14 +1595,14 @@
       { text: r.state || '' },
       { text: r.city || r.location || '' },
       { text: fmt(r.count), bold: true, color: PPT.accent, align: 'right' }
-    ]), area, [0.22, 0.48, 0.3]);
+    ]), area, [0.22, 0.48, 0.3], { fitAll: true, minFontSize: 6.2 });
     area = addCard(slide, pptx, 'Version Usage', rightX, top + 2.02, colW, 1.9);
-    addSimpleTable(slide, pptx, ['PRODUCT', 'VER.', 'USED', '%'], data.versions_top5.map((r) => [
+    addSimpleTable(slide, pptx, ['PRODUCT', 'TOTAL', 'TOP VER.', '%'], data.versions_top5.map((r) => [
       { text: r.product || '' },
+      { text: fmt(r.product_total ?? r.users), bold: true, align: 'right' },
       { text: r.version || '' },
-      { text: fmt(r.users), align: 'right' },
       { text: `${r.pct || 0}%`, bold: true, color: PPT.accent, align: 'right' }
-    ]), area, [0.44, 0.2, 0.18, 0.18]);
+    ]), area, [0.38, 0.19, 0.27, 0.16], { fitAll: true, minFontSize: 5.8 });
     area = addCard(slide, pptx, 'Training Credit Usage', rightX, top + 4.04, colW, 1.18);
     [['Purchased', data.credits.purchased, PPT.dark], ['Used', data.credits.used, PPT.dark], ['Utilized', data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`, PPT.accent]].forEach(([label, value, color], i) => {
       const x = area.x + area.w / 3 * i;

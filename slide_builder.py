@@ -160,6 +160,23 @@ def _cell(cell, text, *, size=8.5, bold=False, color=DARK_GREEN, font=SANS,
               align=align)
 
 
+def _set_table_row_heights(table, total_h, n_rows: int) -> None:
+    """Force rows to share the available table height."""
+    if n_rows <= 0:
+        return
+    row_h = Emu(max(1, int(total_h) // n_rows))
+    for row in table.rows:
+        row.height = row_h
+
+
+def _adaptive_body_size(total_h, n_rows: int, *, base=8.0, minimum=5.4) -> float:
+    """Choose a table font size from the available row height."""
+    if n_rows <= 0:
+        return base
+    row_h_inches = int(total_h) / 914400 / n_rows
+    return max(minimum, min(base, row_h_inches * 25))
+
+
 # --------------------------------------------------------------------------- #
 # Header band
 # --------------------------------------------------------------------------- #
@@ -243,38 +260,33 @@ def _finite_card(slide, x, y, w, h, data):
     if not all_rows:
         _empty_note(slide, ix, iy, iw, ih, "No finite licenses provided")
         return
-    # Fit as many rows as the card height allows (~0.28" per row + header).
-    max_rows = max(3, int(int(ih) / int(Inches(0.28))) - 1)
-    rows = all_rows[:max_rows]
-    truncated = len(all_rows) - len(rows)
-    if truncated:
-        note_h = Inches(0.2)
-        nb = slide.shapes.add_textbox(ix, Emu(int(iy) + int(ih) - int(note_h)),
-                                      iw, note_h)
-        _set_text(nb, f"+{truncated} more not shown", size=7.5,
-                  color=GRAY_TEXT, font=SANS, align=PP_ALIGN.RIGHT)
-        ih = Emu(int(ih) - int(note_h))
+    rows = all_rows
     headers = ["QTY", "LICENSE", "TYPE"]
     n_rows = len(rows) + 1
     tbl_shape = slide.shapes.add_table(n_rows, 3, ix, iy, iw, ih)
     table = tbl_shape.table
     _style_table(table)
-    table.columns[0].width = Emu(int(iw * 0.16))
-    table.columns[1].width = Emu(int(iw * 0.52))
-    table.columns[2].width = Emu(int(iw * 0.32))
+    _set_table_row_heights(table, ih, n_rows)
+    table.columns[0].width = Emu(int(iw * 0.14))
+    table.columns[1].width = Emu(int(iw * 0.56))
+    table.columns[2].width = Emu(int(iw * 0.30))
+
+    body_size = _adaptive_body_size(ih, n_rows, base=8.0, minimum=5.2)
+    header_size = max(5.3, min(7.4, body_size - 0.2))
 
     for c, htext in enumerate(headers):
-        _cell(table.cell(0, c), htext, size=8, bold=True, color=WHITE,
+        _cell(table.cell(0, c), htext, size=header_size, bold=True, color=WHITE,
               font=SANS, fill=DARK_GREEN,
               align=PP_ALIGN.CENTER if c == 0 else PP_ALIGN.LEFT)
 
     for r, row in enumerate(rows, start=1):
         shade = LIGHT_TINT if r % 2 == 0 else WHITE
-        _cell(table.cell(r, 0), row.get("count", ""), size=9, bold=True,
+        _cell(table.cell(r, 0), row.get("count", ""), size=body_size + 0.3, bold=True,
               color=ACCENT_GREEN, font=SANS, align=PP_ALIGN.CENTER, fill=shade)
-        _cell(table.cell(r, 1), row.get("license_name", ""), size=8,
+        _cell(table.cell(r, 1), row.get("license_name", ""), size=body_size,
               color=DARK_GREEN, font=SANS, fill=shade)
-        _cell(table.cell(r, 2), row.get("license_type", ""), size=7,
+        _cell(table.cell(r, 2), row.get("license_type", ""),
+              size=max(5.0, body_size - 0.8),
               color=GRAY_TEXT, font=SANS, fill=shade)
 
 
@@ -430,51 +442,64 @@ def _stat_callout(slide, x, y, w, h, number, label, period, *, number_color,
 def _locations_card(slide, x, y, w, h, data):
     ix, iy, iw, ih = _card(slide, x, y, w, h, "Top Site Locations")
     rows = (data.get("locations_top5", []) or [])[:5]
+    if not rows:
+        _empty_note(slide, ix, iy, iw, ih, "No location data")
+        return
     headers = ["STATE", "CITY", "MACHINES"]
     table = slide.shapes.add_table(len(rows) + 1, 3, ix, iy, iw, ih).table
     _style_table(table)
+    _set_table_row_heights(table, ih, len(rows) + 1)
     table.columns[0].width = Emu(int(iw * 0.22))
     table.columns[1].width = Emu(int(iw * 0.48))
     table.columns[2].width = Emu(int(iw * 0.30))
+    body_size = _adaptive_body_size(ih, len(rows) + 1, base=8.4, minimum=6.4)
 
     for c, htext in enumerate(headers):
-        _cell(table.cell(0, c), htext, size=7.5, bold=True, color=WHITE,
+        _cell(table.cell(0, c), htext, size=max(6.0, body_size - 0.8),
+              bold=True, color=WHITE,
               font=SANS, fill=DARK_GREEN,
               align=PP_ALIGN.RIGHT if c == 2 else PP_ALIGN.LEFT)
     for r, row in enumerate(rows, start=1):
         shade = LIGHT_TINT if r % 2 == 0 else WHITE
-        _cell(table.cell(r, 0), row.get("state", ""), size=8.5,
+        _cell(table.cell(r, 0), row.get("state", ""), size=body_size,
               color=DARK_GREEN, fill=shade)
         _cell(table.cell(r, 1), row.get("city") or row.get("location", ""),
-              size=8.5, color=DARK_GREEN, fill=shade)
-        _cell(table.cell(r, 2), f"{int(row.get('count', 0)):,}", size=9,
+              size=body_size, color=DARK_GREEN, fill=shade)
+        _cell(table.cell(r, 2), f"{int(row.get('count', 0)):,}", size=body_size + 0.2,
               bold=True, color=ACCENT_GREEN, align=PP_ALIGN.RIGHT, fill=shade)
 
 
 def _version_card(slide, x, y, w, h, data):
     ix, iy, iw, ih = _card(slide, x, y, w, h, "Version Usage")
     rows = (data.get("versions_top5", []) or [])[:5]
-    headers = ["PRODUCT", "VER.", "USED", "%"]
+    if not rows:
+        _empty_note(slide, ix, iy, iw, ih, "No version data")
+        return
+    headers = ["PRODUCT", "TOTAL", "TOP VER.", "%"]
     table = slide.shapes.add_table(len(rows) + 1, 4, ix, iy, iw, ih).table
     _style_table(table)
-    table.columns[0].width = Emu(int(iw * 0.44))
-    table.columns[1].width = Emu(int(iw * 0.20))
-    table.columns[2].width = Emu(int(iw * 0.18))
-    table.columns[3].width = Emu(int(iw * 0.18))
+    _set_table_row_heights(table, ih, len(rows) + 1)
+    table.columns[0].width = Emu(int(iw * 0.38))
+    table.columns[1].width = Emu(int(iw * 0.19))
+    table.columns[2].width = Emu(int(iw * 0.27))
+    table.columns[3].width = Emu(int(iw * 0.16))
+    body_size = _adaptive_body_size(ih, len(rows) + 1, base=7.6, minimum=5.9)
 
     for c, htext in enumerate(headers):
-        _cell(table.cell(0, c), htext, size=7.5, bold=True, color=WHITE,
+        _cell(table.cell(0, c), htext, size=max(5.6, body_size - 0.7),
+              bold=True, color=WHITE,
               font=SANS, fill=DARK_GREEN,
-              align=PP_ALIGN.RIGHT if c >= 2 else PP_ALIGN.LEFT)
+              align=PP_ALIGN.RIGHT if c in (1, 3) else PP_ALIGN.LEFT)
     for r, row in enumerate(rows, start=1):
         shade = LIGHT_TINT if r % 2 == 0 else WHITE
-        _cell(table.cell(r, 0), row.get("product", ""), size=8,
+        _cell(table.cell(r, 0), row.get("product", ""), size=body_size,
               color=DARK_GREEN, fill=shade)
-        _cell(table.cell(r, 1), row.get("version", ""), size=8,
-              color=DARK_GREEN, fill=shade)
-        _cell(table.cell(r, 2), f"{int(row.get('users', 0)):,}", size=8,
+        _cell(table.cell(r, 1), f"{int(row.get('product_total', row.get('users', 0))):,}",
+              size=body_size, bold=True, color=DARK_GREEN,
+              align=PP_ALIGN.RIGHT, fill=shade)
+        _cell(table.cell(r, 2), row.get("version", ""), size=body_size,
               color=DARK_GREEN, align=PP_ALIGN.RIGHT, fill=shade)
-        _cell(table.cell(r, 3), f"{int(row.get('pct', 0))}%", size=8.5,
+        _cell(table.cell(r, 3), f"{int(row.get('pct', 0))}%", size=body_size + 0.2,
               bold=True, color=ACCENT_GREEN, align=PP_ALIGN.RIGHT, fill=shade)
 
 

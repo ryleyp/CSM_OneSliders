@@ -77,12 +77,33 @@ def test_parsers():
           int(summed_austin["count"]) == 80, f"got {summed_austin['count']}")
     check("state abbreviation",
           ldf[ldf["city"] == "Bristol"].iloc[0]["state"] == "CT")
+    geo_with_subtotals = (
+        "ip_country\tip_region\tip_city\tMeasure Names\tproduct_name\tMeasure Values\n"
+        "United States\tConnecticut\t\tDistinct count of machine_id\t*\t2,448.00\n"
+        "United States\t\t\tDistinct count of machine_id\t*\t1,287.00\n"
+        "United States\tCalifornia\tOntario\tDistinct count of machine_id\t*\t983\n"
+        "United States\tIowa\tMarion\tDistinct count of machine_id\t*\t177\n"
+        "United States\tArizona\tTucson\tDistinct count of machine_id\t*\t37\n"
+        "United States\tCalifornia\tLos Angeles\tDistinct count of machine_id\t*\t25\n"
+        "United States\tIowa\tCedar Rapids\tDistinct count of machine_id\t*\t15\n"
+        "United States\tTexas\tQ1 2025\tDistinct count of machine_id\t*\t999\n"
+    )
+    top_sites = dp.top_locations(dp.parse_locations(geo_with_subtotals), 5)
+    check("geo ignores subtotal/non-site rows",
+          top_sites[0]["city"] == "Ontario" and len(top_sites) == 5,
+          f"got {top_sites}")
 
     # Versions: top version per product.
     vdf = dp.parse_usage_versions(
-        "product_name\tproduct_version\tcount\nLabVIEW\t2021\t399\nLabVIEW\t2023\t342\n")
+        "product_name\tproduct_version\tcount\n"
+        "LabVIEW\t2021\t399\nLabVIEW\t2023\t342\nMAX\t20.0.0\t479\n")
     top = dp.top_versions(vdf)
     check("top version", top[0]["version"] == "2021" and top[0]["users"] == 399)
+    check("top software total and share",
+          top[0]["product"] == "LabVIEW"
+          and top[0]["product_total"] == 741
+          and top[0]["pct"] == 54,
+          f"got {top[0]}")
 
     # Date/phase math.
     start = dp.parse_date("02-JAN-2026")
@@ -181,6 +202,34 @@ def test_slide_builder():
         b = build_slide(d)
         check(f"builds with {label}", len(b.getvalue()) > 10000)
 
+    all_finite = [
+        {"count": 142, "license_type": "Named User or Computer Based",
+         "license_name": "DIAdem Professional with DAC"},
+        {"count": 53, "license_type": "Named User or Computer Based",
+         "license_name": "Circuit Design Suite"},
+        {"count": 40, "license_type": "Named User or Computer Based",
+         "license_name": "VeriStand Full"},
+        {"count": 23, "license_type": "Concurrent",
+         "license_name": "SystemLink Server Test Operations Suite Server"},
+        {"count": 1, "license_type": "Concurrent",
+         "license_name": "SystemLink Enterprise Test Operations Suite Server"},
+        {"count": 165, "license_type": "Concurrent",
+         "license_name": "SystemLink Test Operations Suite User"},
+        {"count": 325, "license_type": "Concurrent",
+         "license_name": "SystemLink Test Operations Suite Node"},
+    ]
+    prs_all = Presentation(build_slide(dict(data, finite_licenses=all_finite)))
+    table_text = "\n".join(
+        cell.text
+        for slide in prs_all.slides
+        for shape in slide.shapes
+        if getattr(shape, "has_table", False)
+        for row in shape.table.rows
+        for cell in row.cells
+    )
+    check("finite table keeps all contract software",
+          "SystemLink Test Operations Suite Node" in table_text)
+
     deck = build_deck([(data, ins), (dict(data, bundles=[]), None)])
     check("deck slide count", len(list(Presentation(deck).slides)) == 3)
 
@@ -191,7 +240,7 @@ def test_preview():
 
     html = generate_preview_html(_sample_data())
     for token in ("EA-15725", "Blue Origin", "<svg", "Peak machines",
-                  "EA Platform Bundle"):
+                  "EA Platform Bundle", "TOTAL", "TOP VER."):
         check(f"preview contains {token!r}", token in html)
     status = preview_renderer_status()
     check("pptx preview status shape",

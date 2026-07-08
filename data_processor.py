@@ -394,6 +394,8 @@ def _parse_locations_geo(
         count = _to_number(cells[value_i])
         if not city or count is None:
             continue
+        if _looks_like_non_site(city):
+            continue
         key = (region, city)
         count_i = int(count)
         if use_max_per_site:
@@ -423,6 +425,8 @@ def _parse_locations_simple(rows: list[list[str]]) -> pd.DataFrame:
         if not location or count is None:
             continue
         state, city = _split_location(location)
+        if _looks_like_non_site(city or location):
+            continue
         records.append(
             {"location": location, "state": state, "city": city,
              "count": int(count)}
@@ -430,11 +434,33 @@ def _parse_locations_simple(rows: list[list[str]]) -> pd.DataFrame:
     return pd.DataFrame(records, columns=["location", "state", "city", "count"])
 
 
+def _looks_like_non_site(value: str) -> bool:
+    """Reject subtotal/date/header values that are not actual site names."""
+    text = (value or "").strip()
+    if not text:
+        return True
+    low = text.lower()
+    if low in {"*", "all", "total", "grand total", "subtotal", "null", "none"}:
+        return True
+    if re.fullmatch(r"\d{4}(?:\s+q[1-4])?", low):
+        return True
+    if re.fullmatch(r"q[1-4](?:\s+\d{4})?", low):
+        return True
+    if low in {"new", "existing", "machine type", "product_name", "product version"}:
+        return True
+    return False
+
+
 def top_locations(df: pd.DataFrame, n: int = 5) -> list[dict]:
     """Top N locations by machine count."""
     if df is None or df.empty:
         return []
-    top = df.sort_values("count", ascending=False).head(n)
+    usable = df[
+        df["city"].fillna("").map(lambda v: not _looks_like_non_site(str(v)))
+    ].copy()
+    if usable.empty:
+        return []
+    top = usable.sort_values("count", ascending=False).head(n)
     return top.to_dict("records")
 
 
