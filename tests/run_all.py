@@ -331,6 +331,12 @@ def test_github_pages_lite_security():
     check("pages lite uses local script", 'src="assets/app.js"' in index)
     check("pages lite uses local stylesheet", 'href="assets/styles.css"' in index)
     check("pages lite has screenshot uploads", 'id="screenshotA" type="file"' in index)
+    check("pages lite has guided screenshot blanks",
+          "Source Screenshots & Review Blanks" in index
+          and "Exhibit A blanks" in index)
+    check("pages lite has finite and bundle blanks",
+          "Finite license blanks" in index
+          and "Unlimited bundle blanks" in index)
     check("pages lite has contract auto-fill",
           'id="autoContractOcr" type="checkbox" checked' in index)
     check("pages lite has systemlink snow option",

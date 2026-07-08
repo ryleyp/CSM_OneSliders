@@ -26,6 +26,7 @@
     </section>
 
     <section class="controls" aria-label="Profiles and batch decks">
+    <section class="controls" aria-label="Data entry">
       <div class="panel wide">
         <h2>Account Profiles & Batch Decks</h2>
         <div class="grid three profile-grid">
@@ -42,35 +43,91 @@
       </div>
     </section>
 
-    <section class="controls" aria-label="Data entry">
-      <div class="panel">
-        <h2>Contract</h2>
-        <div class="grid two">
-          <label>EA/EP Service ID<input id="serviceId" placeholder="EA-15725"></label>
-          <label>Customer / Company<input id="customer" placeholder="RTX Corporation"></label>
-          <label>Start / Effective Date<input id="startDate" placeholder="02-JAN-2026"></label>
-          <label>EP Term<input id="epTerm" placeholder="3 years"></label>
-          <label>EA End Date<input id="endDate" placeholder="01-JAN-2029"></label>
-          <label>Phase<input id="phase" placeholder="Second Half"></label>
-          <label>Contract Scope<input id="contractScope" placeholder="All NI software"></label>
-          <label>Debug licenses
-            <select id="debugLicenses">
-              <option>No</option>
-              <option>Yes</option>
-            </select>
-          </label>
-        </div>
-        <button id="recomputeDates" type="button">Recompute End Date & Phase</button>
-      </div>
+      <div class="panel wide">
+        <h2>Source Screenshots & Review Blanks</h2>
+        <p class="small">Upload a screenshot for reference or fill the blanks directly. OCR can seed these fields, but the blanks below are what the preview and PPTX use.</p>
+        <label class="check"><input id="autoContractOcr" type="checkbox" checked> Auto-fill contract fields from Screenshot A</label>
+        <div class="shot-review-grid">
+          <article class="shot-card contract-shot">
+            <div class="shot-media">
+              <h3>Screenshot A — Contract details</h3>
+              <label>Source image<input id="screenshotA" type="file" accept="image/png,image/jpeg,image/webp,image/bmp"></label>
+              <span id="shotPreviewA" class="shot-preview">No image selected</span>
+              <button id="ocrA" type="button">Run OCR</button>
+              <span id="ocrStatusA" class="small"></span>
+              <details>
+                <summary>Raw OCR text</summary>
+                <textarea id="ocrRawA" spellcheck="false"></textarea>
+              </details>
+            </div>
+            <div class="manual-fields">
+              <div class="manual-section">
+                <h3>Exhibit A blanks</h3>
+                <div class="grid two">
+                  <label>EA/EP Service ID<input id="serviceId" placeholder="EA-15725"></label>
+                  <label>Customer / Company<input id="customer" placeholder="RTX Corporation"></label>
+                  <label>Start / Effective Date<input id="startDate" placeholder="02-JAN-2026"></label>
+                  <label>EP Term<input id="epTerm" placeholder="3 years"></label>
+                  <label>EA End Date<input id="endDate" placeholder="01-JAN-2029"></label>
+                  <label>Phase<input id="phase" placeholder="Second Half"></label>
+                  <label>Contract Scope<input id="contractScope" placeholder="All NI software"></label>
+                  <label>Debug licenses
+                    <select id="debugLicenses">
+                      <option>No</option>
+                      <option>Yes</option>
+                    </select>
+                  </label>
+                </div>
+                <button id="recomputeDates" type="button">Recompute End Date & Phase</button>
+              </div>
+              <div class="manual-section">
+                <h3>Support & credits blanks</h3>
+                <div class="grid three">
+                  <label>Support tier<input id="supportTier" placeholder="Enterprise Support"></label>
+                  <label>Support scope<input id="supportScope" placeholder="All Users"></label>
+                  <label>FLEX credits purchased<input id="creditsPurchased" placeholder="20,000"></label>
+                  <label>Credits used<input id="creditsUsed" placeholder="7,500"></label>
+                  <label class="check"><input id="systemlinkSnow" type="checkbox"> SystemLink support (SNOW)</label>
+                </div>
+              </div>
+            </div>
+          </article>
 
-      <div class="panel">
-        <h2>Support & Credits</h2>
-        <div class="grid two">
-          <label>Support tier<input id="supportTier" placeholder="Enterprise Support"></label>
-          <label>Support scope<input id="supportScope" placeholder="All Users"></label>
-          <label class="check"><input id="systemlinkSnow" type="checkbox"> SystemLink support (SNOW)</label>
-          <label>FLEX credits purchased<input id="creditsPurchased" placeholder="20,000"></label>
-          <label>Credits used<input id="creditsUsed" placeholder="7,500"></label>
+          <article class="shot-card">
+            <div class="shot-media">
+              <h3>Screenshot B — Finite licenses</h3>
+              <label>Source image<input id="screenshotB" type="file" accept="image/png,image/jpeg,image/webp,image/bmp"></label>
+              <span id="shotPreviewB" class="shot-preview">No image selected</span>
+              <button id="ocrB" type="button">Run OCR</button>
+              <span id="ocrStatusB" class="small"></span>
+              <details>
+                <summary>Raw OCR text</summary>
+                <textarea id="ocrRawB" spellcheck="false"></textarea>
+              </details>
+            </div>
+            <label>Finite license blanks
+              <span>count · license type · license name</span>
+              <textarea id="finiteText" spellcheck="false"></textarea>
+            </label>
+          </article>
+
+          <article class="shot-card">
+            <div class="shot-media">
+              <h3>Screenshot C — Unlimited bundles</h3>
+              <label>Source image<input id="screenshotC" type="file" accept="image/png,image/jpeg,image/webp,image/bmp"></label>
+              <span id="shotPreviewC" class="shot-preview">No image selected</span>
+              <button id="ocrC" type="button">Run OCR</button>
+              <span id="ocrStatusC" class="small"></span>
+              <details>
+                <summary>Raw OCR text</summary>
+                <textarea id="ocrRawC" spellcheck="false"></textarea>
+              </details>
+            </div>
+            <label>Unlimited bundle blanks
+              <span>One bundle name per line</span>
+              <textarea id="bundleText" spellcheck="false"></textarea>
+            </label>
+          </article>
         </div>
       </div>
 
@@ -92,58 +149,6 @@
           <label>Usage Versions
             <span>product_name · product_version · Distinct count</span>
             <textarea id="versionsText" spellcheck="false"></textarea>
-          </label>
-        </div>
-      </div>
-
-      <div class="panel wide">
-        <h2>Licenses & Bundles</h2>
-        <div class="grid two">
-          <label>Finite licenses
-            <span>count · license type · license name</span>
-            <textarea id="finiteText" spellcheck="false"></textarea>
-          </label>
-          <label>Unlimited bundles
-            <span>One bundle name per line</span>
-            <textarea id="bundleText" spellcheck="false"></textarea>
-          </label>
-        </div>
-      </div>
-
-      <div class="panel wide">
-        <h2>Source Screenshots</h2>
-        <p class="small">Optional. Selected images stay in this page only. Browser OCR fills editable fields, and selected screenshots can be included as a source-evidence slide in the generated PPTX.</p>
-        <label class="check"><input id="autoContractOcr" type="checkbox" checked> Auto-fill contract fields from Screenshot A</label>
-        <div class="grid three">
-          <label>Screenshot A — Contract details
-            <input id="screenshotA" type="file" accept="image/png,image/jpeg,image/webp,image/bmp">
-            <span id="shotPreviewA" class="shot-preview">No image selected</span>
-            <button id="ocrA" type="button">Run OCR</button>
-            <span id="ocrStatusA" class="small"></span>
-            <details>
-              <summary>Raw OCR text</summary>
-              <textarea id="ocrRawA" spellcheck="false"></textarea>
-            </details>
-          </label>
-          <label>Screenshot B — Finite licenses
-            <input id="screenshotB" type="file" accept="image/png,image/jpeg,image/webp,image/bmp">
-            <span id="shotPreviewB" class="shot-preview">No image selected</span>
-            <button id="ocrB" type="button">Run OCR</button>
-            <span id="ocrStatusB" class="small"></span>
-            <details>
-              <summary>Raw OCR text</summary>
-              <textarea id="ocrRawB" spellcheck="false"></textarea>
-            </details>
-          </label>
-          <label>Screenshot C — Unlimited bundles
-            <input id="screenshotC" type="file" accept="image/png,image/jpeg,image/webp,image/bmp">
-            <span id="shotPreviewC" class="shot-preview">No image selected</span>
-            <button id="ocrC" type="button">Run OCR</button>
-            <span id="ocrStatusC" class="small"></span>
-            <details>
-              <summary>Raw OCR text</summary>
-              <textarea id="ocrRawC" spellcheck="false"></textarea>
-            </details>
           </label>
         </div>
       </div>

@@ -330,14 +330,14 @@ with st.expander("Preview parsed tables", expanded=False):
         st.dataframe(versions_df, width="stretch", hide_index=True)
 
 # =========================================================================== #
-# PART 2 — Upload screenshots (OCR -> editable review fields)
+# PART 2 — Screenshots + review blanks (OCR -> editable fields)
 # =========================================================================== #
-st.header("Part 2 · Upload screenshots")
+st.header("Part 2 · Source screenshots & review blanks")
 st.warning("OCR is imperfect. **Every** value below is editable — review and "
            "correct everything before generating.")
-st.caption("Screenshots B and C are **optional** — skip either one and its "
-           "card is simply left out of the slide. You can also type rows in by "
-           "hand below instead of uploading.")
+st.caption("Upload screenshots for reference or type the screenshot values into "
+           "the blanks below. Screenshots B and C are optional — skip either "
+           "one and its card is simply left out of the slide.")
 
 up1, up2, up3 = st.columns(3)
 with up1:
@@ -393,7 +393,7 @@ def _confidence_report(parsed: dict, words: list[dict]) -> tuple[list, list]:
 
 
 # --- Screenshot A: Contract details ---------------------------------------- #
-st.subheader("Screenshot A · Contract details")
+st.subheader("Screenshot A · Contract details blanks")
 text_a = _ocr_once(img_a, "a")
 if st.session_state.pop("a_new", False):
     parsed = sr.parse_contract_details(text_a)
@@ -519,7 +519,7 @@ with st.expander("Raw OCR text — Screenshot A"):
     st.text(text_a or "(no text yet)")
 
 # --- Screenshot B: Finite licenses ----------------------------------------- #
-st.subheader("Screenshot B · Finite licenses (optional)")
+st.subheader("Screenshot B · Finite license blanks (optional)")
 text_b = _ocr_once(img_b, "b")
 if st.session_state.pop("b_new", False):
     rows = sr.parse_finite_licenses(text_b)
@@ -554,7 +554,7 @@ with st.expander("Raw OCR text — Screenshot B"):
     st.text(text_b or "(no text yet)")
 
 # --- Screenshot C: Unlimited bundles --------------------------------------- #
-st.subheader("Screenshot C · Unlimited bundles (optional)")
+st.subheader("Screenshot C · Unlimited bundle blanks (optional)")
 text_c = _ocr_once(img_c, "c")
 if st.session_state.pop("c_new", False):
     bundles = sr.parse_unlimited_bundles(text_c)
