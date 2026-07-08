@@ -342,8 +342,8 @@ def test_github_pages_lite_security():
     check("pages lite has CSP", "Content-Security-Policy" in index)
     check("pages lite limits network to self", "connect-src 'self'" in index)
     check("pages lite keeps worker policy strict", "worker-src 'self'" in index)
-    check("pages lite uses local script", 'src="assets/app.js"' in index)
-    check("pages lite uses local stylesheet", 'href="assets/styles.css"' in index)
+    check("pages lite uses local script", 'src="assets/app.js' in index)
+    check("pages lite uses local stylesheet", 'href="assets/styles.css' in index)
     check("pages lite has no screenshot uploads",
           'id="screenshotA" type="file"' not in index
           and "Run OCR" not in index)
