@@ -278,7 +278,12 @@
     const data = rows(text);
     if (!data.length) return [];
     const header = data[0].join(' ').toLowerCase();
-    if (header.includes('ip_city') || header.includes('ip_region') || (header.includes('measure value') && header.includes('city'))) {
+    const looksGeo = header.includes('ip_city') || header.includes('ip_region') || (header.includes('measure value') && header.includes('city'))
+      || data.slice(0, 5).some((cells) => {
+        if (cells.length < 5 || toNumber(cells[cells.length - 1]) === null) return false;
+        return ['machine', 'distinct', 'count'].some((key) => cells.slice(0, -1).join(' ').toLowerCase().includes(key));
+      });
+    if (looksGeo) {
       return parseGeoLocations(data, avoidDoubleCount);
     }
     return data.map((cells, i) => {
@@ -293,22 +298,35 @@
   }
 
   function parseGeoLocations(data, avoidDoubleCount) {
-    const header = data[0];
+    const first = data[0];
+    const firstJoined = first.join(' ').toLowerCase();
+    const hasHeader = (firstJoined.includes('ip_') || firstJoined.includes('measure value') || firstJoined.includes('measure name') || firstJoined.includes('product_name') || firstJoined.includes('city'))
+      && toNumber(first[first.length - 1]) === null;
+    const header = hasHeader ? first : [];
+    const dataRows = hasHeader ? data.slice(1) : data;
     let regionI = null, cityI = null, valueI = null, productI = null, measureI = null;
-    header.forEach((h, i) => {
-      const low = h.toLowerCase();
-      if (low.includes('region') || low.endsWith('state') || low === 'state') regionI = i;
-      else if (low.includes('city')) cityI = i;
-      else if (low.includes('product')) productI = i;
-      else if (low.includes('measure name')) measureI = i;
-      else if (low.includes('measure value') || low.includes('(measure)') || low.includes('count')) valueI = i;
-    });
+    if (hasHeader) {
+      header.forEach((h, i) => {
+        const low = h.toLowerCase();
+        if (low.includes('region') || low.endsWith('state') || low === 'state') regionI = i;
+        else if (low.includes('city')) cityI = i;
+        else if (low.includes('product')) productI = i;
+        else if (low.includes('measure name')) measureI = i;
+        else if (low.includes('measure value') || low.includes('(measure)') || low.includes('count')) valueI = i;
+      });
+    } else {
+      regionI = 1;
+      cityI = 2;
+      measureI = 3;
+      productI = 4;
+      valueI = first.length - 1;
+    }
     if (cityI === null) return [];
-    if (valueI === null) valueI = header.length - 1;
+    if (valueI === null) valueI = first.length - 1;
     const required = [regionI, cityI, valueI, measureI].filter((v) => v !== null);
     const useMax = avoidDoubleCount && productI !== null;
     const agg = new Map();
-    data.slice(1).forEach((cells) => {
+    dataRows.forEach((cells) => {
       if (cells.length <= Math.max(...required)) return;
       if (measureI !== null) {
         const measure = cells[measureI].toLowerCase();

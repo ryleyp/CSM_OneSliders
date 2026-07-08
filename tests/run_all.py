@@ -92,6 +92,18 @@ def test_parsers():
     check("geo ignores subtotal/non-site rows",
           top_sites[0]["city"] == "Ontario" and len(top_sites) == 5,
           f"got {top_sites}")
+    geo_headerless = (
+        "United States\tConnecticut\t\tDistinct count of machine_id\t*\t2,448.00\n"
+        "United States\t\t\tDistinct count of machine_id\t*\t1,287.00\n"
+        "United States\tCalifornia\tOntario\tDistinct count of machine_id\t*\t983\n"
+        "United States\tIowa\tMarion\tDistinct count of machine_id\t*\t177\n"
+        "United States\tArizona\tTucson\tDistinct count of machine_id\t*\t37\n"
+    )
+    headerless_top = dp.top_locations(dp.parse_locations(geo_headerless), 5)
+    check("headerless geo keeps state and city columns",
+          headerless_top[0]["state"] == "CA"
+          and headerless_top[0]["city"] == "Ontario",
+          f"got {headerless_top}")
 
     # Versions: top version per product.
     vdf = dp.parse_usage_versions(

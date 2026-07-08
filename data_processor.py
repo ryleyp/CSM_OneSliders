@@ -347,8 +347,16 @@ def _is_geo_location_format(rows: list[list[str]]) -> bool:
     if not rows:
         return False
     header = " ".join(c.lower() for c in rows[0])
-    return ("ip_city" in header or "ip_region" in header
-            or ("measure value" in header and "city" in header))
+    if ("ip_city" in header or "ip_region" in header
+            or ("measure value" in header and "city" in header)):
+        return True
+    # Headerless Tableau copy: country | region | city | measure | product | value.
+    for cells in rows[:5]:
+        if len(cells) >= 5 and _to_number(cells[-1]) is not None:
+            joined = " ".join(c.lower() for c in cells[:-1])
+            if any(k in joined for k in ("machine", "distinct", "count")):
+                return True
+    return False
 
 
 def _parse_locations_geo(
@@ -357,30 +365,40 @@ def _parse_locations_geo(
     avoid_product_double_count: bool = True,
 ) -> pd.DataFrame:
     """Aggregate a geo export to machines per (region, city)."""
-    header = rows[0]
+    first = rows[0]
+    has_header = any(
+        key in " ".join(c.lower() for c in first)
+        for key in ("ip_", "measure value", "measure name", "product_name", "city")
+    ) and _to_number(first[-1]) is None
+    data_rows = rows[1:] if has_header else rows
     region_i = city_i = value_i = None
     product_i = measure_i = None
-    for i, h in enumerate(header):
-        hl = h.lower()
-        if "region" in hl or hl.endswith("state") or hl == "state":
-            region_i = i
-        elif "city" in hl:
-            city_i = i
-        elif "product" in hl:
-            product_i = i
-        elif "measure name" in hl:
-            measure_i = i
-        elif "measure value" in hl or "(measure)" in hl or "count" in hl:
-            value_i = i
+    if has_header:
+        header = rows[0]
+        for i, h in enumerate(header):
+            hl = h.lower()
+            if "region" in hl or hl.endswith("state") or hl == "state":
+                region_i = i
+            elif "city" in hl:
+                city_i = i
+            elif "product" in hl:
+                product_i = i
+            elif "measure name" in hl:
+                measure_i = i
+            elif "measure value" in hl or "(measure)" in hl or "count" in hl:
+                value_i = i
+    else:
+        # Headerless export order: country, region, city, measure, product, value.
+        region_i, city_i, measure_i, product_i, value_i = 1, 2, 3, 4, len(first) - 1
     if city_i is None:
         return _parse_locations_simple(rows)
     if value_i is None:
-        value_i = len(header) - 1  # Measure Values is the last column
+        value_i = len(first) - 1  # Measure Values is the last column
 
     agg: dict[tuple[str, str], int] = {}
     use_max_per_site = avoid_product_double_count and product_i is not None
     required_cols = [i for i in (region_i, city_i, value_i, measure_i) if i is not None]
-    for cells in rows[1:]:
+    for cells in data_rows:
         if len(cells) <= max(required_cols):
             continue
         if measure_i is not None and len(cells) > measure_i:
