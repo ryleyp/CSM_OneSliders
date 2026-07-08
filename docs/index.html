@@ -26,7 +26,6 @@
     </section>
 
     <section class="controls" aria-label="Profiles and batch decks">
-    <section class="controls" aria-label="Data entry">
       <div class="panel wide">
         <h2>Account Profiles & Batch Decks</h2>
         <div class="grid three profile-grid">
@@ -43,6 +42,7 @@
       </div>
     </section>
 
+    <section class="controls" aria-label="Data entry">
       <div class="panel wide">
         <h2>Source Screenshots & Review Blanks</h2>
         <p class="small">Upload a screenshot for reference or fill the blanks directly. OCR can seed these fields, but the blanks below are what the preview and PPTX use.</p>
@@ -105,10 +105,17 @@
                 <textarea id="ocrRawB" spellcheck="false"></textarea>
               </details>
             </div>
-            <label>Finite license blanks
-              <span>count · license type · license name</span>
-              <textarea id="finiteText" spellcheck="false"></textarea>
-            </label>
+            <div class="editable-table-block">
+              <div class="editor-toolbar">
+                <div>
+                  <h3>Finite license blanks</h3>
+                  <span>count · license type · license name</span>
+                </div>
+                <button id="addFiniteRow" type="button">Add Row</button>
+              </div>
+              <div id="finiteRows" class="row-editor finite-row-editor" aria-label="Finite license rows"></div>
+              <textarea id="finiteText" class="source-data" spellcheck="false" aria-hidden="true" tabindex="-1"></textarea>
+            </div>
           </article>
 
           <article class="shot-card">
@@ -123,10 +130,17 @@
                 <textarea id="ocrRawC" spellcheck="false"></textarea>
               </details>
             </div>
-            <label>Unlimited bundle blanks
-              <span>One bundle name per line</span>
-              <textarea id="bundleText" spellcheck="false"></textarea>
-            </label>
+            <div class="editable-table-block">
+              <div class="editor-toolbar">
+                <div>
+                  <h3>Unlimited bundle blanks</h3>
+                  <span>One bundle name per line</span>
+                </div>
+                <button id="addBundleRow" type="button">Add Row</button>
+              </div>
+              <div id="bundleRows" class="row-editor bundle-row-editor" aria-label="Unlimited bundle rows"></div>
+              <textarea id="bundleText" class="source-data" spellcheck="false" aria-hidden="true" tabindex="-1"></textarea>
+            </div>
           </article>
         </div>
       </div>

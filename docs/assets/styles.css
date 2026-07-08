@@ -215,6 +215,89 @@ button:hover { background: #02523a; }
   padding-top: 12px;
 }
 
+.editable-table-block {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.editor-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-toolbar h3 {
+  margin-bottom: 2px;
+}
+
+.editor-toolbar span {
+  display: block;
+  color: var(--gray);
+  font-size: 12px;
+}
+
+.editor-toolbar button {
+  flex: 0 0 auto;
+}
+
+.row-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.editor-header,
+.editor-row {
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+
+.finite-row-editor .editor-header,
+.finite-row-editor .editor-row {
+  grid-template-columns: minmax(64px, .5fr) minmax(150px, 1.2fr) minmax(220px, 1.8fr) minmax(82px, auto);
+}
+
+.bundle-row-editor .editor-header,
+.bundle-row-editor .editor-row {
+  grid-template-columns: minmax(220px, 1fr) minmax(82px, auto);
+}
+
+.editor-header {
+  color: var(--gray);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.editor-row {
+  padding: 8px;
+  border: 1px solid #e3e8e5;
+  background: #fff;
+}
+
+.editor-row input {
+  padding: 8px;
+}
+
+.remove-row {
+  min-height: 36px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #9fb4ac;
+  color: var(--dark);
+}
+
+.remove-row:hover {
+  background: #eef5f2;
+}
+
+.source-data {
+  display: none;
+}
+
 details {
   border: 1px solid #e3e8e5;
   background: #fbfcfb;
@@ -512,6 +595,11 @@ footer { width: min(1440px, calc(100% - 32px)); margin: 20px auto; }
   .controls, .grid.three, .preview-area, .shot-review-grid, .contract-shot { grid-template-columns: 1fr; }
   .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
+  .finite-row-editor .editor-header,
+  .finite-row-editor .editor-row {
+    grid-template-columns: minmax(58px, .5fr) minmax(130px, 1fr) minmax(180px, 1.5fr) minmax(74px, auto);
+  }
+
   .profile-grid,
   .grid.three.profile-grid {
     grid-template-columns: 1fr 1fr;
@@ -553,6 +641,20 @@ footer { width: min(1440px, calc(100% - 32px)); margin: 20px auto; }
   .grid.two,
   .profile-grid,
   .grid.three.profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .finite-row-editor .editor-header {
+    display: none;
+  }
+
+  .finite-row-editor .editor-row,
+  .bundle-row-editor .editor-row {
     grid-template-columns: 1fr;
   }
 

@@ -337,6 +337,14 @@ def test_github_pages_lite_security():
     check("pages lite has finite and bundle blanks",
           "Finite license blanks" in index
           and "Unlimited bundle blanks" in index)
+    check("pages lite has editable license rows",
+          'id="finiteRows"' in index
+          and 'id="addFiniteRow"' in index
+          and "renderFiniteEditorRows" in app_js)
+    check("pages lite has editable bundle rows",
+          'id="bundleRows"' in index
+          and 'id="addBundleRow"' in index
+          and "renderBundleEditorRows" in app_js)
     check("pages lite has contract auto-fill",
           'id="autoContractOcr" type="checkbox" checked' in index)
     check("pages lite has systemlink snow option",

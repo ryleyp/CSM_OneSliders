@@ -401,6 +401,137 @@
     }).filter(Boolean);
   }
 
+  const blankFiniteRow = () => ({ count: '', license_type: '', license_name: '' });
+  const blankBundleRow = () => ({ bundle_name: '' });
+
+  function finiteEditorRowsFromText(text) {
+    const parsed = rows(text).map((cells) => {
+      if (cells.length >= 3) {
+        return { count: cells[0], license_type: cells[1], license_name: cells.slice(2).join(' ') };
+      }
+      if (cells.length === 1) {
+        const match = cells[0].match(/^(\d[\d,]*)\s+(.+)$/);
+        if (!match) return null;
+        return { count: match[1], license_type: match[2], license_name: '' };
+      }
+      return null;
+    }).filter(Boolean);
+    return parsed.length ? parsed : [blankFiniteRow()];
+  }
+
+  function bundleEditorRowsFromText(text) {
+    const parsed = String(text || '').split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((bundle_name) => ({ bundle_name }));
+    return parsed.length ? parsed : [blankBundleRow()];
+  }
+
+  function renderFiniteEditorRows(editorRows) {
+    const container = $('finiteRows');
+    if (!container) return;
+    const rowsToRender = editorRows.length ? editorRows : [blankFiniteRow()];
+    container.innerHTML = [
+      '<div class="editor-header"><span>Count</span><span>License Type</span><span>License Name</span><span></span></div>',
+      ...rowsToRender.map((row, i) => `
+        <div class="editor-row" data-index="${i}">
+          <input data-field="count" inputmode="numeric" aria-label="Finite count" placeholder="142" value="${esc(row.count || '')}">
+          <input data-field="license_type" aria-label="Finite license type" placeholder="Named User or Computer Based" value="${esc(row.license_type || '')}">
+          <input data-field="license_name" aria-label="Finite license name" placeholder="DIAdem Professional with DAC" value="${esc(row.license_name || '')}">
+          <button class="remove-row" type="button">Remove</button>
+        </div>`)
+    ].join('');
+  }
+
+  function renderBundleEditorRows(editorRows) {
+    const container = $('bundleRows');
+    if (!container) return;
+    const rowsToRender = editorRows.length ? editorRows : [blankBundleRow()];
+    container.innerHTML = [
+      '<div class="editor-header"><span>Bundle Name</span><span></span></div>',
+      ...rowsToRender.map((row, i) => `
+        <div class="editor-row" data-index="${i}">
+          <input data-field="bundle_name" aria-label="Unlimited bundle name" placeholder="EA Platform Bundle" value="${esc(row.bundle_name || '')}">
+          <button class="remove-row" type="button">Remove</button>
+        </div>`)
+    ].join('');
+  }
+
+  function readFiniteEditorRows() {
+    const container = $('finiteRows');
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.editor-row')).map((row) => ({
+      count: row.querySelector('[data-field="count"]').value.trim(),
+      license_type: row.querySelector('[data-field="license_type"]').value.trim(),
+      license_name: row.querySelector('[data-field="license_name"]').value.trim()
+    }));
+  }
+
+  function readBundleEditorRows() {
+    const container = $('bundleRows');
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.editor-row')).map((row) => ({
+      bundle_name: row.querySelector('[data-field="bundle_name"]').value.trim()
+    }));
+  }
+
+  function syncFiniteTextFromEditor(renderNow = true) {
+    $('finiteText').value = readFiniteEditorRows()
+      .filter((row) => row.count || row.license_type || row.license_name)
+      .map((row) => `${row.count}\t${row.license_type}\t${row.license_name}`)
+      .join('\n');
+    if (renderNow) render();
+  }
+
+  function syncBundleTextFromEditor(renderNow = true) {
+    $('bundleText').value = readBundleEditorRows()
+      .map((row) => row.bundle_name)
+      .filter(Boolean)
+      .join('\n');
+    if (renderNow) render();
+  }
+
+  function setFiniteText(value, renderNow = true) {
+    $('finiteText').value = value || '';
+    renderFiniteEditorRows(finiteEditorRowsFromText($('finiteText').value));
+    if (renderNow) render();
+  }
+
+  function setBundleText(value, renderNow = true) {
+    $('bundleText').value = value || '';
+    renderBundleEditorRows(bundleEditorRowsFromText($('bundleText').value));
+    if (renderNow) render();
+  }
+
+  function setupEditableTables() {
+    setFiniteText($('finiteText').value, false);
+    setBundleText($('bundleText').value, false);
+    $('addFiniteRow').addEventListener('click', () => {
+      renderFiniteEditorRows([...readFiniteEditorRows(), blankFiniteRow()]);
+      syncFiniteTextFromEditor();
+    });
+    $('addBundleRow').addEventListener('click', () => {
+      renderBundleEditorRows([...readBundleEditorRows(), blankBundleRow()]);
+      syncBundleTextFromEditor();
+    });
+    $('finiteRows').addEventListener('input', () => syncFiniteTextFromEditor());
+    $('bundleRows').addEventListener('input', () => syncBundleTextFromEditor());
+    $('finiteRows').addEventListener('click', (event) => {
+      const button = event.target.closest('.remove-row');
+      if (!button) return;
+      button.closest('.editor-row').remove();
+      if (!$('finiteRows').querySelector('.editor-row')) renderFiniteEditorRows([blankFiniteRow()]);
+      syncFiniteTextFromEditor();
+    });
+    $('bundleRows').addEventListener('click', (event) => {
+      const button = event.target.closest('.remove-row');
+      if (!button) return;
+      button.closest('.editor-row').remove();
+      if (!$('bundleRows').querySelector('.editor-row')) renderBundleEditorRows([blankBundleRow()]);
+      syncBundleTextFromEditor();
+    });
+  }
+
   function cleanOcrLine(line) {
     return String(line || '').replace(/\s+/g, ' ').trim();
   }
@@ -1187,7 +1318,7 @@
       : parseFiniteLicensesOcr(detail.text);
     if (!parsed.length) parsed = parseFiniteLicensesOcr(detail.text);
     if (parsed.length) {
-      $('finiteText').value = parsed.map((r) => `${r.count}\t${r.license_type}\t${r.license_name}`).join('\n');
+      setFiniteText(parsed.map((r) => `${r.count}\t${r.license_type}\t${r.license_name}`).join('\n'), false);
       setOcrStatus('b', `OCR applied ${parsed.length} row${parsed.length === 1 ? '' : 's'}${detail.tableMode ? ' from table columns' : ''}`);
     } else {
       setOcrStatus('b', 'OCR finished; no finite rows found');
@@ -1201,7 +1332,7 @@
       : parseUnlimitedBundlesOcr(detail.text);
     if (!parsed.length) parsed = parseUnlimitedBundlesOcr(detail.text);
     if (parsed.length) {
-      $('bundleText').value = parsed.join('\n');
+      setBundleText(parsed.join('\n'), false);
       setOcrStatus('c', `OCR applied ${parsed.length} bundle${parsed.length === 1 ? '' : 's'}${detail.tableMode ? ' from table columns' : ''}`);
     } else {
       setOcrStatus('c', 'OCR finished; no bundles found');
@@ -1253,8 +1384,8 @@
     $('machineText').value = EXAMPLES.machine;
     $('locationsText').value = EXAMPLES.locations;
     $('versionsText').value = EXAMPLES.versions;
-    $('finiteText').value = EXAMPLES.finite;
-    $('bundleText').value = EXAMPLES.bundles;
+    setFiniteText(EXAMPLES.finite, false);
+    setBundleText(EXAMPLES.bundles, false);
     $('serviceId').value = 'EA-15725';
     $('customer').value = 'Sample Customer';
     $('startDate').value = '02-JAN-2026';
@@ -1374,8 +1505,8 @@
     $('creditsPurchased').value = fields.f_flex_purchased || '';
     $('creditsUsed').value = fields.f_flex_used || '';
     $('avoidLocationDoubleCount').checked = payload.settings ? payload.settings.avoid_location_double_count !== false : true;
-    $('finiteText').value = (payload.finite_licenses || []).map((r) => `${r.count || 0}\t${r.license_type || ''}\t${r.license_name || ''}`).join('\n');
-    $('bundleText').value = (payload.bundles || []).join('\n');
+    setFiniteText((payload.finite_licenses || []).map((r) => `${r.count || 0}\t${r.license_type || ''}\t${r.license_name || ''}`).join('\n'), false);
+    setBundleText((payload.bundles || []).join('\n'), false);
     $('profileName').value = suggestProfileName();
     render();
   }
@@ -1824,9 +1955,12 @@
       $(meta.previewId).textContent = 'No image selected';
       setOcrStatus(key, '');
     });
+    setFiniteText('', false);
+    setBundleText('', false);
     render();
   }
 
+  setupEditableTables();
   $('recomputeDates').addEventListener('click', recomputeDates);
   $('loadExamples').addEventListener('click', loadExamples);
   $('generate').addEventListener('click', render);
@@ -1842,6 +1976,9 @@
   $('ocrA').addEventListener('click', () => runOcr('a'));
   $('ocrB').addEventListener('click', () => runOcr('b'));
   $('ocrC').addEventListener('click', () => runOcr('c'));
-  document.querySelectorAll('input, textarea, select').forEach((el) => el.addEventListener('input', render));
+  document.querySelectorAll('input, textarea, select').forEach((el) => {
+    if (el.closest('.row-editor') || el.classList.contains('source-data')) return;
+    el.addEventListener('input', render);
+  });
   render();
 })();
