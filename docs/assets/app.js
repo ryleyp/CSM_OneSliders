@@ -1470,6 +1470,33 @@
     }, 100);
   }
 
+  const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+  async function repairPptxPackage(arrayBuffer) {
+    const Zip = window.JSZip;
+    if (!Zip || !Zip.loadAsync) {
+      return new Blob([arrayBuffer], { type: PPTX_MIME });
+    }
+    const zip = await Zip.loadAsync(arrayBuffer);
+    const existingParts = new Set(
+      Object.keys(zip.files).filter((name) => !zip.files[name].dir)
+    );
+    const contentTypes = zip.file('[Content_Types].xml');
+    if (contentTypes) {
+      const xml = await contentTypes.async('string');
+      const cleaned = xml.replace(
+        /<Override\s+PartName="([^"]+)"\s+ContentType="([^"]+)"\s*\/>/g,
+        (match, partName) => {
+          const normalized = String(partName || '').replace(/^\//, '');
+          return existingParts.has(normalized) ? match : '';
+        }
+      );
+      zip.file('[Content_Types].xml', cleaned);
+    }
+    const output = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    return output.slice(0, output.size, PPTX_MIME);
+  }
+
   function currentProfilePayload() {
     return {
       version: 2,
@@ -1948,7 +1975,9 @@
 
   async function writePresentation(pptx, fileName) {
     setStatus(`Preparing ${fileName}...`);
-    await pptx.writeFile({ fileName });
+    const bytes = await pptx.write({ outputType: 'arraybuffer' });
+    const blob = await repairPptxPackage(bytes);
+    downloadBlob(blob, fileName);
     setStatus(`Downloaded ${fileName}`, 'ok');
   }
 

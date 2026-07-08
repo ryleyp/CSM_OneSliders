@@ -371,7 +371,10 @@ def test_github_pages_lite_security():
           and "renderBundleEditorRows" in app_js)
     check("pages lite has systemlink snow option",
           'id="systemlinkSnow" type="checkbox"' in index)
-    check("pages lite has PPTX generation", "downloadCurrentPptx" in app_js)
+    check("pages lite has PPTX generation",
+          "downloadCurrentPptx" in app_js
+          and "repairPptxPackage" in app_js
+          and "[Content_Types].xml" in app_js)
     check("pages lite has profile import/export", "currentProfilePayload" in app_js)
     check("pages lite has batch deck generation", "downloadBatchPptx" in app_js)
     check("pages lite does not load browser OCR",
