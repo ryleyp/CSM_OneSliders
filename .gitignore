@@ -34,3 +34,6 @@ generated/
 # PyInstaller build output
 build/
 dist/
+
+# Local Claude Code session config (machine-specific)
+.claude/

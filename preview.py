@@ -103,7 +103,8 @@ def _chart_svg(df, width=340, height=210) -> str:
 # --------------------------------------------------------------------------- #
 def _card(title, body, extra_class="") -> str:
     return (f'<div class="card {extra_class}">'
-            f'<div class="ctitle">{_e(title)}</div>{body}</div>')
+            f'<div class="ctitle">{_e(title)}</div>'
+            f'<div class="card-body">{body}</div></div>')
 
 
 def _contract_card(data) -> str:
@@ -115,7 +116,7 @@ def _contract_card(data) -> str:
         f'<div class="krow"><span class="k">{_e(k)}</span>'
         f'<span class="v">{_e(v) or "&mdash;"}</span></div>'
         for k, v in rows)
-    return _card("Contract Details", body)
+    return _card("Contract Details", body, "contract-card")
 
 
 def _bundles_card(data) -> str:
@@ -174,7 +175,7 @@ def _locations_card(data) -> str:
         f'<td class="qty" style="text-align:right">{_fmt(r.get("count"))}</td></tr>'
         for r in rows[:5])
     return _card("Top Site Locations",
-                 f'<table><tr><th>STATE</th><th>CITY</th>'
+                 f'<table class="site-table"><tr><th>STATE</th><th>CITY</th>'
                  f'<th style="text-align:right">MACHINES</th></tr>{body_rows}</table>')
 
 
@@ -242,15 +243,22 @@ def generate_preview_html(data: dict) -> str:
         padding: 12px 22px 16px; flex: 1; min-height: 0; }}
       .col {{ display: flex; flex-direction: column; gap: 9px; min-height: 0; }}
       .card {{ background: #fff; border: 1px solid {BORDER}; border-radius: 8px;
-        padding: 9px 11px; }}
+        padding: 7px 9px; display: flex; flex-direction: column; min-height: 0;
+        overflow: hidden; }}
       .card.grow {{ flex: 1; }}
       .card.dark {{ background: {DARK}; border-color: {DARK}; }}
       .ctitle {{ font-size: 8.5px; letter-spacing: 2px; color: {ACCENT};
-        font-weight: 700; text-transform: uppercase; margin-bottom: 7px; }}
+        font-weight: 700; text-transform: uppercase; margin-bottom: 5px;
+        flex: 0 0 auto; }}
+      .card-body {{ flex: 1 1 auto; min-height: 0; overflow: hidden; }}
+      .contract-card .card-body {{ display: grid;
+        grid-template-rows: repeat(4, minmax(0, 1fr)); }}
       .krow {{ display: flex; justify-content: space-between; font-size: 11px;
-        padding: 4px 0; }}
+        padding: 0; align-items: center; gap: 8px; min-height: 0;
+        line-height: 1.08; }}
       .krow .k {{ color: {GRAY}; }}
-      .krow .v {{ color: {DARK}; font-weight: 700; text-align: right; }}
+      .krow .v {{ color: {DARK}; font-weight: 700; text-align: right;
+        overflow-wrap: anywhere; }}
       .pill {{ border: 1.5px solid {ACCENT}; border-radius: 7px; padding: 5px;
         text-align: center; font-size: 10.5px; font-weight: 700; color: {DARK};
         margin-bottom: 6px; }}
@@ -259,8 +267,9 @@ def generate_preview_html(data: dict) -> str:
         padding: 4px 6px; text-align: left; }}
       td {{ padding: 4px 6px; color: {DARK}; }}
       tr:nth-child(odd) td {{ background: {TINT}; }}
-      .finite-table, .version-table {{ table-layout: fixed; }}
-      .finite-table th, .finite-table td, .version-table th, .version-table td {{
+      .finite-table, .site-table, .version-table {{ table-layout: fixed; }}
+      .finite-table th, .finite-table td, .site-table th, .site-table td,
+      .version-table th, .version-table td {{
         overflow-wrap: anywhere; line-height: 1.12; }}
       .finite-table th, .finite-table td {{ padding: 3px 4px; }}
       .finite-table th:nth-child(1), .finite-table td:nth-child(1) {{ width: 14%; }}
@@ -270,8 +279,14 @@ def generate_preview_html(data: dict) -> str:
       .finite-table.ultra-dense {{ font-size: 7px; }}
       .finite-table.dense th, .finite-table.dense td,
       .finite-table.ultra-dense th, .finite-table.ultra-dense td {{ padding: 2px 3px; }}
-      .version-table {{ font-size: 8.5px; }}
-      .version-table th, .version-table td {{ padding: 3px 4px; }}
+      .site-table, .version-table {{ height: 100%; }}
+      .site-table {{ font-size: 8px; }}
+      .site-table th, .site-table td {{ padding: 2px 4px; }}
+      .site-table th:nth-child(1), .site-table td:nth-child(1) {{ width: 22%; }}
+      .site-table th:nth-child(2), .site-table td:nth-child(2) {{ width: 48%; }}
+      .site-table th:nth-child(3), .site-table td:nth-child(3) {{ width: 30%; }}
+      .version-table {{ font-size: 7.5px; }}
+      .version-table th, .version-table td {{ padding: 2px 3px; }}
       .version-table th:nth-child(1), .version-table td:nth-child(1) {{ width: 38%; }}
       .version-table th:nth-child(2), .version-table td:nth-child(2) {{ width: 19%; }}
       .version-table th:nth-child(3), .version-table td:nth-child(3) {{ width: 27%; }}

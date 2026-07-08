@@ -755,7 +755,7 @@
   }
 
   function card(title, body, extra = '') {
-    return `<div class="card ${extra}"><div class="card-title">${esc(title)}</div>${body}</div>`;
+    return `<div class="card ${extra}"><div class="card-title">${esc(title)}</div><div class="card-body">${body}</div></div>`;
   }
 
   function table(headers, rowsHtml, className = '') {
@@ -775,7 +775,7 @@
       <div class="slide-header"><div><div class="slide-label">Enterprise Agreement</div><div class="slide-title">${esc(data.service_id || 'EA')} · ${esc(data.customer || 'Customer')}</div></div><div class="updated">Updated ${esc(data.updated_date)}</div></div>
       <div class="slide-grid">
         <div class="col left">
-          ${card('Contract Details', [['EA End Date', data.ea_end_date], ['Term Duration', data.ep_term], ['Contract Scope', data.contract_scope], ['Phase', data.phase]].map(([k, v]) => `<div class="krow"><span class="key">${esc(k)}</span><span class="value">${esc(v || '—')}</span></div>`).join(''))}
+          ${card('Contract Details', [['EA End Date', data.ea_end_date], ['Term Duration', data.ep_term], ['Contract Scope', data.contract_scope], ['Phase', data.phase]].map(([k, v]) => `<div class="krow"><span class="key">${esc(k)}</span><span class="value">${esc(v || '—')}</span></div>`).join(''), 'contract-card')}
           ${card('Bundle Information', bundles)}
           ${card('NI SW Licenses (Finite Qty)', finite)}
         </div>
@@ -1468,6 +1468,43 @@
     };
   }
 
+  // ----- fit-to-size estimation -------------------------------------------
+  // PowerPoint text boxes do not clip: overflowing text spills past the card.
+  // Estimate rendered text height (accounting for wrapping) and shrink fonts
+  // until each table/row fits the space its card gives it.
+  const FIT = { charW: 0.52, lineH: 1.25, sidePad: 0.08, rowPad: 0.035 };
+
+  function estLines(text, colWIn, size) {
+    const avail = Math.max(colWIn - FIT.sidePad, 0.08);
+    const perLine = Math.max(1, Math.floor((avail * 72) / (size * FIT.charW)));
+    return Math.max(1, Math.ceil(String(text ?? '').length / perLine));
+  }
+
+  function estRowH(cells, colWsIn, size) {
+    let lines = 1;
+    cells.forEach((t, i) => { lines = Math.max(lines, estLines(t, colWsIn[i], size)); });
+    return (lines * size * FIT.lineH) / 72 + FIT.rowPad;
+  }
+
+  function estTableH(rowTexts, colWsIn, size) {
+    return rowTexts.reduce((s, r) => s + estRowH(r, colWsIn, size), 0);
+  }
+
+  function fitTableFont(rowTexts, colWsIn, totalH, base, minimum) {
+    let size = base;
+    while (size > minimum) {
+      if (estTableH(rowTexts, colWsIn, size) <= totalH) return size;
+      size = Math.round((size - 0.2) * 10) / 10;
+    }
+    return minimum;
+  }
+
+  function fitOneLine(text, availWIn, size, minimum = 6) {
+    const est = (String(text ?? '').length * size * FIT.charW) / 72;
+    if (est <= availWIn || est <= 0) return size;
+    return Math.max(minimum, size * (availWIn / est));
+  }
+
   function addText(slide, text, opts) {
     slide.addText(String(text ?? ''), {
       margin: 0.04,
@@ -1508,10 +1545,13 @@
 
   function addKeyRows(slide, area, pairs) {
     const rowH = area.h / pairs.length;
+    const labelSize = Math.max(6.2, Math.min(8.5, rowH * 24));
+    const valueW = area.w * 0.57 - 0.06;
     pairs.forEach(([label, value], i) => {
       const y = area.y + i * rowH;
-      addText(slide, label, { x: area.x, y, w: area.w * 0.48, h: rowH, fontSize: 8.5, color: PPT.gray, valign: 'mid' });
-      addText(slide, value || '—', { x: area.x + area.w * 0.43, y, w: area.w * 0.57, h: rowH, fontSize: 8.8, bold: true, color: PPT.dark, align: 'right', valign: 'mid' });
+      const text = value || '—';
+      addText(slide, label, { x: area.x, y, w: area.w * 0.48, h: rowH, fontSize: labelSize, color: PPT.gray, valign: 'mid' });
+      addText(slide, text, { x: area.x + area.w * 0.43, y, w: area.w * 0.57, h: rowH, fontSize: fitOneLine(text, valueW, Math.max(6.4, Math.min(8.8, rowH * 24.5))), bold: true, color: PPT.dark, align: 'right', valign: 'mid' });
     });
   }
 
@@ -1520,31 +1560,50 @@
       addText(slide, 'No data provided', { x: area.x, y: area.y + 0.12, w: area.w, h: 0.24, fontSize: 8.5, color: PPT.gray, align: 'center' });
       return;
     }
-    const maxRows = Math.max(1, Math.floor((area.h - 0.28) / 0.27));
-    const rowsToShow = options.fitAll ? rowsData : rowsData.slice(0, maxRows);
-    const rowH = options.fitAll
-      ? area.h / (rowsToShow.length + 1)
-      : Math.min(0.31, area.h / (rowsToShow.length + 1));
-    const bodySize = options.fontSize || Math.max(options.minFontSize || 5.4, Math.min(7.4, rowH * 24));
+    const colWsIn = colW.map((f) => area.w * f);
+    const texts = (rows) => [headers].concat(rows.map((row) => row.map((c) => c.text)));
+    let rowsToShow = rowsData;
+    let rowTexts = texts(rowsToShow);
+    const minSize = Math.min(options.minFontSize || 5.4, 5.4);
+    const bodySize = fitTableFont(rowTexts, colWsIn, area.h, options.fontSize || 7.6, minSize);
+    // If even the minimum font can't fit every row, truncate and note it
+    // instead of spilling past the card.
+    let overflow = 0;
+    if (estTableH(rowTexts, colWsIn, bodySize) > area.h) {
+      while (rowsToShow.length > 1 && estTableH(rowTexts, colWsIn, bodySize) > area.h) {
+        rowsToShow = rowsToShow.slice(0, -1);
+        overflow = rowsData.length - rowsToShow.length;
+        rowTexts = texts(rowsToShow).concat([[`+${overflow} more`]]);
+      }
+    }
+    // Row heights proportional to what each row's wrapped text needs.
+    const needs = rowTexts.map((r) => estRowH(r, colWsIn, bodySize));
+    const scale = area.h / needs.reduce((s, n) => s + n, 0);
+    const rowHs = needs.map((n) => n * scale);
     const headerSize = Math.max(options.minHeaderSize || 5.2, Math.min(6.8, bodySize - 0.4));
     let x = area.x;
     headers.forEach((head, i) => {
       const cw = area.w * colW[i];
-      addRect(slide, pptx, x, area.y, cw, rowH, PPT.dark, PPT.dark);
-      addText(slide, head, { x: x + 0.03, y: area.y + 0.04, w: cw - 0.06, h: Math.max(0.08, rowH - 0.04), fontSize: headerSize, bold: true, color: PPT.white, align: i === headers.length - 1 ? 'right' : 'left' });
+      addRect(slide, pptx, x, area.y, cw, rowHs[0], PPT.dark, PPT.dark);
+      addText(slide, head, { x: x + 0.03, y: area.y + 0.02, w: cw - 0.06, h: Math.max(0.08, rowHs[0] - 0.03), fontSize: headerSize, bold: true, color: PPT.white, align: i === headers.length - 1 ? 'right' : 'left', valign: 'mid' });
       x += cw;
     });
+    let y = area.y + rowHs[0];
     rowsToShow.forEach((row, r) => {
       x = area.x;
-      const y = area.y + rowH * (r + 1);
+      const rowH = rowHs[r + 1];
       const fill = r % 2 ? PPT.tint : PPT.white;
       row.forEach((cell, i) => {
         const cw = area.w * colW[i];
         addRect(slide, pptx, x, y, cw, rowH, fill, 'EEF1EF', 0.2);
-        addText(slide, cell.text, { x: x + 0.03, y: y + 0.03, w: cw - 0.06, h: Math.max(0.08, rowH - 0.03), fontSize: cell.size || bodySize, bold: !!cell.bold, color: cell.color || PPT.dark, align: cell.align || 'left', valign: 'mid' });
+        addText(slide, cell.text, { x: x + 0.03, y: y + 0.02, w: cw - 0.06, h: Math.max(0.08, rowH - 0.02), fontSize: Math.min(cell.size || bodySize, bodySize), bold: !!cell.bold, color: cell.color || PPT.dark, align: cell.align || 'left', valign: 'mid' });
         x += cw;
       });
+      y += rowH;
     });
+    if (overflow) {
+      addText(slide, `+${overflow} more`, { x: area.x + 0.03, y, w: area.w - 0.06, h: Math.max(0.08, rowHs[rowHs.length - 1] - 0.02), fontSize: Math.max(5, bodySize - 0.5), color: PPT.gray, valign: 'mid' });
+    }
   }
 
   function addTrend(slide, pptx, machine, area) {
@@ -1620,7 +1679,7 @@
       area = addCard(slide, pptx, 'Bundle Information', leftX, y, colW, h);
       bundles.slice(0, Math.floor(area.h / 0.34)).forEach((bundle, i) => {
         addRect(slide, pptx, area.x, area.y + i * 0.38, area.w, 0.3, PPT.white, PPT.accent, 1);
-        addText(slide, bundle, { x: area.x + 0.05, y: area.y + i * 0.38 + 0.06, w: area.w - 0.1, h: 0.18, fontSize: 8, bold: true, align: 'center' });
+        addText(slide, bundle, { x: area.x + 0.05, y: area.y + i * 0.38 + 0.06, w: area.w - 0.1, h: 0.18, fontSize: fitOneLine(bundle, area.w - 0.2, 8), bold: true, align: 'center' });
       });
       y += h + 0.12;
     }
@@ -1641,13 +1700,18 @@
     area = addCard(slide, pptx, 'Software Usage Data', centerX, top + 3.52, colW, 2.68);
     addStatsCard(slide, pptx, area, data.machine.stats);
 
-    area = addCard(slide, pptx, 'Top Site Locations', rightX, top, colW, 1.9);
+    // Locations/version cards split their space by their actual row counts.
+    const nLoc = Math.max(data.locations_top5.length, 1);
+    const nVer = Math.max(data.versions_top5.length, 1);
+    const tablesH = 3.8;
+    const hLoc = tablesH * (nLoc + 1) / (nLoc + nVer + 2);
+    area = addCard(slide, pptx, 'Top Site Locations', rightX, top, colW, hLoc);
     addSimpleTable(slide, pptx, ['STATE', 'CITY', 'MACHINES'], data.locations_top5.map((r) => [
       { text: r.state || '' },
       { text: r.city || r.location || '' },
       { text: fmt(r.count), bold: true, color: PPT.accent, align: 'right' }
     ]), area, [0.22, 0.48, 0.3], { fitAll: true, minFontSize: 6.2 });
-    area = addCard(slide, pptx, 'Version Usage', rightX, top + 2.02, colW, 1.9);
+    area = addCard(slide, pptx, 'Version Usage', rightX, top + hLoc + 0.12, colW, tablesH - hLoc);
     addSimpleTable(slide, pptx, ['PRODUCT', 'TOTAL', 'TOP VER.', '%'], data.versions_top5.map((r) => [
       { text: r.product || '' },
       { text: fmt(r.product_total ?? r.users), bold: true, align: 'right' },
@@ -1662,7 +1726,10 @@
     });
     addRect(slide, pptx, rightX, top + 5.34, colW, 0.86, PPT.dark, PPT.dark);
     addText(slide, 'TECHNICAL SUPPORT', { x: rightX + 0.14, y: top + 5.44, w: colW - 0.28, h: 0.2, fontSize: 7.5, bold: true, color: PPT.muted });
-    addText(slide, `${data.support.tier || '—'}${data.support.scope ? `   ${data.support.scope}` : ''}`, { x: rightX + 0.14, y: top + 5.72, w: colW - 0.28, h: 0.28, fontSize: 11, bold: true, color: PPT.white, valign: 'mid' });
+    slide.addText([
+      { text: data.support.tier || '—', options: { fontSize: 11, bold: true, color: PPT.white } },
+      ...(data.support.scope ? [{ text: `   ${data.support.scope}`, options: { fontSize: 9, color: PPT.muted } }] : [])
+    ], { x: rightX + 0.14, y: top + 5.72, w: colW - 0.28, h: 0.28, fontFace: 'Calibri', valign: 'mid' });
   }
 
   function addInsightsSlide(pptx, data, insights) {

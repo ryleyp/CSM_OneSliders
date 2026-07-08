@@ -19,6 +19,7 @@ All rendering is local (python-pptx writes the .pptx in memory). No network.
 
 from __future__ import annotations
 
+import math
 from io import BytesIO
 
 from pptx import Presentation
@@ -118,7 +119,7 @@ def _card(slide, x, y, w, h, title, *, title_color=ACCENT_GREEN,
     pad = Inches(0.14)
     title_h = Inches(0.26)
     tb = slide.shapes.add_textbox(x + pad, y + Inches(0.08), w - 2 * pad, title_h)
-    _set_text(tb, title.upper(), size=8.5, bold=True, color=title_color,
+    _set_text(tb, title.upper(), size=7.5, bold=True, color=title_color,
               font=SANS, spacing=180)
 
     inner_x = x + pad
@@ -160,21 +161,83 @@ def _cell(cell, text, *, size=8.5, bold=False, color=DARK_GREEN, font=SANS,
               align=align)
 
 
-def _set_table_row_heights(table, total_h, n_rows: int) -> None:
-    """Force rows to share the available table height."""
-    if n_rows <= 0:
-        return
-    row_h = Emu(max(1, int(total_h) // n_rows))
-    for row in table.rows:
-        row.height = row_h
+# --------------------------------------------------------------------------- #
+# Fit-to-size estimation
+#
+# PowerPoint never renders a table row shorter than its (wrapped) text, so a
+# forced row height alone cannot make a table fit its card. Instead we
+# estimate the rendered height of every row at a candidate font size —
+# accounting for text wrapping in each column — and shrink the font until the
+# whole table fits the space the card gives it.
+# --------------------------------------------------------------------------- #
+_CHAR_W_EM = 0.52       # avg glyph width as a fraction of font size (Calibri)
+_LINE_H_EM = 1.25       # rendered line height as a fraction of font size
+_CELL_SIDE_MARGIN = 0.10  # left+right cell margins, inches
+_ROW_V_PAD = 0.035        # top+bottom cell margins plus slack, inches
 
 
-def _adaptive_body_size(total_h, n_rows: int, *, base=8.0, minimum=5.4) -> float:
-    """Choose a table font size from the available row height."""
-    if n_rows <= 0:
-        return base
-    row_h_inches = int(total_h) / 914400 / n_rows
-    return max(minimum, min(base, row_h_inches * 25))
+def _est_text_w(text, size: float) -> float:
+    """Rough single-line width of `text` in inches at `size` pt."""
+    return len(str(text)) * size * _CHAR_W_EM / 72
+
+
+def _est_lines(text, col_w_in: float, size: float) -> int:
+    """Estimated wrapped line count of `text` in a column `col_w_in` wide."""
+    avail = max(col_w_in - _CELL_SIDE_MARGIN, 0.08)
+    per_line = max(1, int(avail * 72 / (size * _CHAR_W_EM)))
+    return max(1, math.ceil(len(str(text)) / per_line))
+
+
+def _est_row_h(cells, col_ws_in, size: float) -> float:
+    """Estimated rendered height (inches) of one table row."""
+    lines = max(_est_lines(t, w, size) for t, w in zip(cells, col_ws_in))
+    return lines * size * _LINE_H_EM / 72 + _ROW_V_PAD
+
+
+def _est_table_h(row_texts, col_ws_in, size: float) -> float:
+    return sum(_est_row_h(r, col_ws_in, size) for r in row_texts)
+
+
+def _fit_table_font(row_texts, col_ws_in, total_h_in: float, *,
+                    base: float, minimum: float) -> float:
+    """Largest font size <= base at which the table fits `total_h_in`."""
+    size = base
+    while size > minimum:
+        if _est_table_h(row_texts, col_ws_in, size) <= total_h_in:
+            return size
+        size = round(size - 0.2, 1)
+    return minimum
+
+
+def _max_fitting_rows(row_texts, col_ws_in, total_h_in: float,
+                      size: float) -> int:
+    """How many leading rows of `row_texts` fit in `total_h_in` at `size`."""
+    h = 0.0
+    for i, r in enumerate(row_texts):
+        h += _est_row_h(r, col_ws_in, size)
+        if h > total_h_in:
+            return i
+    return len(row_texts)
+
+
+def _set_row_heights_fitted(table, row_texts, col_ws_in, total_h,
+                            size: float) -> None:
+    """Distribute the table height across rows in proportion to what each
+    row's (possibly wrapped) text actually needs, filling the full space."""
+    needs = [_est_row_h(r, col_ws_in, size) for r in row_texts]
+    total_need = sum(needs) or 1.0
+    scale = (int(total_h) / 914400) / total_need
+    for row, need in zip(table.rows, needs):
+        row.height = Emu(max(1, int(need * scale * 914400)))
+
+
+def _fit_one_line(text, avail_w_in: float, size: float, *,
+                  minimum: float = 6.0) -> float:
+    """Shrink `size` so `text` fits on one line in `avail_w_in` inches."""
+    est = _est_text_w(text, size)
+    if est <= avail_w_in or est <= 0:
+        return size
+    return max(minimum, size * avail_w_in / est)
 
 
 # --------------------------------------------------------------------------- #
@@ -187,7 +250,7 @@ def _header(slide, data):
     pad = Inches(0.35)
     # Small uppercase muted-green label.
     tb = slide.shapes.add_textbox(pad, Inches(0.12), Inches(8), Inches(0.24))
-    _set_text(tb, "ENTERPRISE AGREEMENT", size=8.5, bold=True,
+    _set_text(tb, "ENTERPRISE AGREEMENT", size=8, bold=True,
               color=MUTED_GREEN, font=SANS, spacing=200)
 
     # EA number · customer, bold white serif.
@@ -201,7 +264,7 @@ def _header(slide, data):
     for txt in (sid, "  ·  ", cust):
         r = p.add_run()
         r.text = txt
-        r.font.size = Pt(22)
+        r.font.size = Pt(20)
         r.font.bold = True
         r.font.name = SERIF
         r.font.color.rgb = WHITE
@@ -226,14 +289,20 @@ def _contract_details_card(slide, x, y, w, h, data):
         ("Phase", data.get("phase", "")),
     ]
     row_h = ih / len(rows)
+    row_h_inches = int(row_h) / 914400
+    label_size = max(6.2, min(8.5, row_h_inches * 24))
+    value_size = max(6.4, min(8.8, row_h_inches * 24.5))
+    value_w_in = int(iw) / 914400 * 0.58 - 0.04
     for i, (label, value) in enumerate(rows):
         ry = iy + Emu(int(row_h) * i)
         lb = slide.shapes.add_textbox(ix, ry, iw * 0.5, Emu(int(row_h)))
-        _set_text(lb, label, size=9, color=GRAY_TEXT, font=SANS,
+        _set_text(lb, label, size=label_size, color=GRAY_TEXT, font=SANS,
                   anchor=MSO_ANCHOR.MIDDLE)
         vb = slide.shapes.add_textbox(ix + iw * 0.42, ry, iw * 0.58,
                                       Emu(int(row_h)))
-        _set_text(vb, value or "—", size=9.5, bold=True, color=DARK_GREEN,
+        vtext = value or "—"
+        vsize = _fit_one_line(vtext, value_w_in, value_size)
+        _set_text(vb, vtext, size=vsize, bold=True, color=DARK_GREEN,
                   font=SANS, align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
 
 
@@ -243,14 +312,16 @@ def _bundle_card(slide, x, y, w, h, data):
     if not bundles:
         _empty_note(slide, ix, iy, iw, ih, "No bundles provided")
         return
-    pill_h = Inches(0.34)
+    pill_h = Inches(0.30)
     gap = Inches(0.08)
     max_pills = max(1, int(ih / (pill_h + gap)))
+    pill_w_in = int(iw) / 914400 - 0.15
     for i, name in enumerate(bundles[:max_pills]):
         py = iy + Emu(int(pill_h + gap) * i)
         pill = _rect(slide, ix, py, iw, pill_h, fill=WHITE, line=ACCENT_GREEN,
                      line_w=Pt(1.0))
-        _set_text(pill, name, size=9, bold=True, color=DARK_GREEN, font=SANS,
+        _set_text(pill, name, size=_fit_one_line(name, pill_w_in, 8),
+                  bold=True, color=DARK_GREEN, font=SANS,
                   align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
 
 
@@ -262,32 +333,59 @@ def _finite_card(slide, x, y, w, h, data):
         return
     rows = all_rows
     headers = ["QTY", "LICENSE", "TYPE"]
-    n_rows = len(rows) + 1
+    col_fracs = (0.14, 0.56, 0.30)
+    iw_in = int(iw) / 914400
+    ih_in = int(ih) / 914400
+    col_ws_in = [iw_in * f for f in col_fracs]
+
+    def _texts(rws):
+        return [headers] + [[str(r.get("count", "")), r.get("license_name", ""),
+                             r.get("license_type", "")] for r in rws]
+
+    row_texts = _texts(rows)
+    body_size = _fit_table_font(row_texts, col_ws_in, ih_in,
+                                base=7.6, minimum=5.1)
+    # If even the minimum font can't fit every license, truncate and add a
+    # "+N more" footer row instead of overflowing the card.
+    overflow = 0
+    if _est_table_h(row_texts, col_ws_in, body_size) > ih_in:
+        fit = _max_fitting_rows(row_texts, col_ws_in, ih_in, body_size)
+        keep = max(1, fit - 2)  # header + room for the footer row
+        overflow = len(rows) - keep
+        rows = rows[:keep]
+        row_texts = _texts(rows) + [["", f"+{overflow} more licenses", ""]]
+
+    n_rows = len(row_texts)
     tbl_shape = slide.shapes.add_table(n_rows, 3, ix, iy, iw, ih)
     table = tbl_shape.table
     _style_table(table)
-    _set_table_row_heights(table, ih, n_rows)
-    table.columns[0].width = Emu(int(iw * 0.14))
-    table.columns[1].width = Emu(int(iw * 0.56))
-    table.columns[2].width = Emu(int(iw * 0.30))
+    table.columns[0].width = Emu(int(iw * col_fracs[0]))
+    table.columns[1].width = Emu(int(iw * col_fracs[1]))
+    table.columns[2].width = Emu(int(iw * col_fracs[2]))
+    _set_row_heights_fitted(table, row_texts, col_ws_in, ih, body_size)
 
-    body_size = _adaptive_body_size(ih, n_rows, base=8.0, minimum=5.2)
-    header_size = max(5.3, min(7.4, body_size - 0.2))
+    header_size = max(5.2, min(6.8, body_size - 0.4))
 
     for c, htext in enumerate(headers):
         _cell(table.cell(0, c), htext, size=header_size, bold=True, color=WHITE,
-              font=SANS, fill=DARK_GREEN,
-              align=PP_ALIGN.CENTER if c == 0 else PP_ALIGN.LEFT)
+              font=SANS, fill=DARK_GREEN, align=PP_ALIGN.LEFT)
 
     for r, row in enumerate(rows, start=1):
         shade = LIGHT_TINT if r % 2 == 0 else WHITE
-        _cell(table.cell(r, 0), row.get("count", ""), size=body_size + 0.3, bold=True,
-              color=ACCENT_GREEN, font=SANS, align=PP_ALIGN.CENTER, fill=shade)
+        _cell(table.cell(r, 0), row.get("count", ""), size=body_size, bold=True,
+              color=ACCENT_GREEN, font=SANS, align=PP_ALIGN.RIGHT, fill=shade)
         _cell(table.cell(r, 1), row.get("license_name", ""), size=body_size,
               color=DARK_GREEN, font=SANS, fill=shade)
         _cell(table.cell(r, 2), row.get("license_type", ""),
-              size=max(5.0, body_size - 0.8),
+              size=min(6.8, body_size),
               color=GRAY_TEXT, font=SANS, fill=shade)
+
+    if overflow:
+        r = n_rows - 1
+        for c in range(3):
+            _cell(table.cell(r, c), "" if c != 1 else f"+{overflow} more licenses",
+                  size=max(5.0, body_size - 0.5), color=GRAY_TEXT, font=SANS,
+                  fill=WHITE)
 
 
 # --------------------------------------------------------------------------- #
@@ -395,11 +493,11 @@ def _usage_data_card(slide, x, y, w, h, data):
     strip_h = ih - Emu(int(callout_h)) - Inches(0.1)
     _rect(slide, ix, strip_y, iw, strip_h, fill=LIGHT_TINT, line=None)
     lbl = slide.shapes.add_textbox(ix + Inches(0.12), strip_y, iw * 0.6, strip_h)
-    _set_text(lbl, "Avg quarterly increase", size=9.5, color=DARK_GREEN,
+    _set_text(lbl, "Avg quarterly increase", size=8.7, color=DARK_GREEN,
               font=SANS, anchor=MSO_ANCHOR.MIDDLE)
     val = slide.shapes.add_textbox(ix + iw * 0.55, strip_y, iw * 0.45 - Inches(0.12),
                                    strip_h)
-    _set_text(val, f"{avg:+.1f}%", size=20, bold=True, color=ACCENT_GREEN,
+    _set_text(val, f"{avg:+.1f}%", size=18, bold=True, color=ACCENT_GREEN,
               font=SERIF, align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
 
 
@@ -414,7 +512,7 @@ def _stat_callout(slide, x, y, w, h, number, label, period, *, number_color,
     p.alignment = PP_ALIGN.CENTER
     r = p.add_run()
     r.text = f"{int(number):,}"
-    r.font.size = Pt(30)
+    r.font.size = Pt(24)
     r.font.bold = True
     r.font.name = SERIF
     r.font.color.rgb = number_color
@@ -423,7 +521,7 @@ def _stat_callout(slide, x, y, w, h, number, label, period, *, number_color,
     p2.alignment = PP_ALIGN.CENTER
     r2 = p2.add_run()
     r2.text = label
-    r2.font.size = Pt(9)
+    r2.font.size = Pt(7.8)
     r2.font.name = SANS
     r2.font.color.rgb = GRAY_TEXT
     # Period
@@ -431,7 +529,7 @@ def _stat_callout(slide, x, y, w, h, number, label, period, *, number_color,
     p3.alignment = PP_ALIGN.CENTER
     r3 = p3.add_run()
     r3.text = str(period)
-    r3.font.size = Pt(8)
+    r3.font.size = Pt(7)
     r3.font.name = SANS
     r3.font.color.rgb = DARK_GREEN
 
@@ -446,16 +544,24 @@ def _locations_card(slide, x, y, w, h, data):
         _empty_note(slide, ix, iy, iw, ih, "No location data")
         return
     headers = ["STATE", "CITY", "MACHINES"]
+    col_fracs = (0.22, 0.48, 0.30)
+    iw_in = int(iw) / 914400
+    ih_in = int(ih) / 914400
+    col_ws_in = [iw_in * f for f in col_fracs]
+    row_texts = [headers] + [
+        [r.get("state", ""), r.get("city") or r.get("location", ""),
+         f"{int(r.get('count', 0)):,}"] for r in rows]
+    body_size = _fit_table_font(row_texts, col_ws_in, ih_in,
+                                base=7.6, minimum=5.4)
     table = slide.shapes.add_table(len(rows) + 1, 3, ix, iy, iw, ih).table
     _style_table(table)
-    _set_table_row_heights(table, ih, len(rows) + 1)
-    table.columns[0].width = Emu(int(iw * 0.22))
-    table.columns[1].width = Emu(int(iw * 0.48))
-    table.columns[2].width = Emu(int(iw * 0.30))
-    body_size = _adaptive_body_size(ih, len(rows) + 1, base=8.4, minimum=6.4)
+    table.columns[0].width = Emu(int(iw * col_fracs[0]))
+    table.columns[1].width = Emu(int(iw * col_fracs[1]))
+    table.columns[2].width = Emu(int(iw * col_fracs[2]))
+    _set_row_heights_fitted(table, row_texts, col_ws_in, ih, body_size)
 
     for c, htext in enumerate(headers):
-        _cell(table.cell(0, c), htext, size=max(6.0, body_size - 0.8),
+        _cell(table.cell(0, c), htext, size=max(5.2, min(6.8, body_size - 0.4)),
               bold=True, color=WHITE,
               font=SANS, fill=DARK_GREEN,
               align=PP_ALIGN.RIGHT if c == 2 else PP_ALIGN.LEFT)
@@ -465,7 +571,7 @@ def _locations_card(slide, x, y, w, h, data):
               color=DARK_GREEN, fill=shade)
         _cell(table.cell(r, 1), row.get("city") or row.get("location", ""),
               size=body_size, color=DARK_GREEN, fill=shade)
-        _cell(table.cell(r, 2), f"{int(row.get('count', 0)):,}", size=body_size + 0.2,
+        _cell(table.cell(r, 2), f"{int(row.get('count', 0)):,}", size=body_size,
               bold=True, color=ACCENT_GREEN, align=PP_ALIGN.RIGHT, fill=shade)
 
 
@@ -476,20 +582,27 @@ def _version_card(slide, x, y, w, h, data):
         _empty_note(slide, ix, iy, iw, ih, "No version data")
         return
     headers = ["PRODUCT", "TOTAL", "TOP VER.", "%"]
+    col_fracs = (0.38, 0.19, 0.27, 0.16)
+    iw_in = int(iw) / 914400
+    ih_in = int(ih) / 914400
+    col_ws_in = [iw_in * f for f in col_fracs]
+    row_texts = [headers] + [
+        [r.get("product", ""),
+         f"{int(r.get('product_total', r.get('users', 0))):,}",
+         r.get("version", ""), f"{int(r.get('pct', 0))}%"] for r in rows]
+    body_size = _fit_table_font(row_texts, col_ws_in, ih_in,
+                                base=7.6, minimum=5.4)
     table = slide.shapes.add_table(len(rows) + 1, 4, ix, iy, iw, ih).table
     _style_table(table)
-    _set_table_row_heights(table, ih, len(rows) + 1)
-    table.columns[0].width = Emu(int(iw * 0.38))
-    table.columns[1].width = Emu(int(iw * 0.19))
-    table.columns[2].width = Emu(int(iw * 0.27))
-    table.columns[3].width = Emu(int(iw * 0.16))
-    body_size = _adaptive_body_size(ih, len(rows) + 1, base=7.6, minimum=5.9)
+    for c, frac in enumerate(col_fracs):
+        table.columns[c].width = Emu(int(iw * frac))
+    _set_row_heights_fitted(table, row_texts, col_ws_in, ih, body_size)
 
     for c, htext in enumerate(headers):
-        _cell(table.cell(0, c), htext, size=max(5.6, body_size - 0.7),
+        _cell(table.cell(0, c), htext, size=max(5.2, min(6.8, body_size - 0.4)),
               bold=True, color=WHITE,
               font=SANS, fill=DARK_GREEN,
-              align=PP_ALIGN.RIGHT if c in (1, 3) else PP_ALIGN.LEFT)
+              align=PP_ALIGN.RIGHT if c == 3 else PP_ALIGN.LEFT)
     for r, row in enumerate(rows, start=1):
         shade = LIGHT_TINT if r % 2 == 0 else WHITE
         _cell(table.cell(r, 0), row.get("product", ""), size=body_size,
@@ -498,8 +611,8 @@ def _version_card(slide, x, y, w, h, data):
               size=body_size, bold=True, color=DARK_GREEN,
               align=PP_ALIGN.RIGHT, fill=shade)
         _cell(table.cell(r, 2), row.get("version", ""), size=body_size,
-              color=DARK_GREEN, align=PP_ALIGN.RIGHT, fill=shade)
-        _cell(table.cell(r, 3), f"{int(row.get('pct', 0))}%", size=body_size + 0.2,
+              color=DARK_GREEN, fill=shade)
+        _cell(table.cell(r, 3), f"{int(row.get('pct', 0))}%", size=body_size,
               bold=True, color=ACCENT_GREEN, align=PP_ALIGN.RIGHT, fill=shade)
 
 
@@ -519,11 +632,11 @@ def _credits_card(slide, x, y, w, h, data):
     for i, (label, value, color) in enumerate(cols):
         cx = ix + Emu(int(col_w) * i)
         lb = slide.shapes.add_textbox(cx, iy, Emu(int(col_w)), Inches(0.24))
-        _set_text(lb, label, size=8, color=GRAY_TEXT, font=SANS,
+        _set_text(lb, label, size=7.2, color=GRAY_TEXT, font=SANS,
                   align=PP_ALIGN.CENTER)
         vb = slide.shapes.add_textbox(cx, iy + Inches(0.26), Emu(int(col_w)),
                                       ih - Inches(0.26))
-        _set_text(vb, _fmt(value), size=19, bold=True, color=color, font=SERIF,
+        _set_text(vb, _fmt(value), size=16, bold=True, color=color, font=SERIF,
                   align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.TOP)
 
 
@@ -533,7 +646,7 @@ def _support_card(slide, x, y, w, h, data):
     pad = Inches(0.14)
     title_tb = slide.shapes.add_textbox(x + pad, y + Inches(0.08), w - 2 * pad,
                                         Inches(0.24))
-    _set_text(title_tb, "TECHNICAL SUPPORT", size=8.5, bold=True,
+    _set_text(title_tb, "TECHNICAL SUPPORT", size=7.5, bold=True,
               color=MUTED_GREEN, font=SANS, spacing=180)
 
     support = data.get("support", {}) or {}
@@ -547,14 +660,14 @@ def _support_card(slide, x, y, w, h, data):
     p = tf.paragraphs[0]
     r = p.add_run()
     r.text = tier
-    r.font.size = Pt(13)
+    r.font.size = Pt(11)
     r.font.bold = True
     r.font.name = SANS
     r.font.color.rgb = WHITE
     if scope:
         r2 = p.add_run()
         r2.text = f"   {scope}"
-        r2.font.size = Pt(10)
+        r2.font.size = Pt(9)
         r2.font.name = SANS
         r2.font.color.rgb = MUTED_GREEN
 
@@ -592,7 +705,7 @@ def _add_insights_slide(prs, data: dict, insights: list[dict]) -> None:
     _rect(slide, 0, 0, SLIDE_W, band_h, fill=DARK_GREEN, rounded=False)
     pad = Inches(0.35)
     tb = slide.shapes.add_textbox(pad, Inches(0.12), Inches(8), Inches(0.24))
-    _set_text(tb, "CSM INSIGHTS", size=8.5, bold=True, color=MUTED_GREEN,
+    _set_text(tb, "CSM INSIGHTS", size=8, bold=True, color=MUTED_GREEN,
               font=SANS, spacing=200)
     sid = data.get("service_id") or "EA-—"
     cust = data.get("customer") or "Customer"
@@ -603,7 +716,7 @@ def _add_insights_slide(prs, data: dict, insights: list[dict]) -> None:
     for txt in (sid, "  ·  ", cust):
         r = p.add_run()
         r.text = txt
-        r.font.size = Pt(22)
+        r.font.size = Pt(20)
         r.font.bold = True
         r.font.name = SERIF
         r.font.color.rgb = WHITE
@@ -612,18 +725,18 @@ def _add_insights_slide(prs, data: dict, insights: list[dict]) -> None:
     x = Inches(0.35)
     w = SLIDE_W - Inches(0.7)
     y = Inches(1.15)
-    row_h = Inches(0.92)
-    gap = Inches(0.1)
+    row_h = Inches(0.88)
+    gap = Inches(0.12)
     for i, ins in enumerate(insights[:6]):
         fill = LIGHT_TINT if i % 2 == 0 else WHITE
         _rect(slide, x, y, w, row_h, fill=fill, line=CARD_BORDER,
               line_w=Pt(0.75))
         prio = int(ins.get("priority", 4))
         chip_w = Inches(1.0)
-        chip = _rect(slide, x + Inches(0.12), y + Inches(0.3), chip_w,
-                     Inches(0.32), fill=_PRIORITY_COLORS.get(prio, DARK_GREEN),
+        chip = _rect(slide, x + Inches(0.12), y + Inches(0.28), chip_w,
+                     Inches(0.30), fill=_PRIORITY_COLORS.get(prio, DARK_GREEN),
                      line=None)
-        _set_text(chip, _PRIORITY_LABELS.get(prio, ""), size=8.5, bold=True,
+        _set_text(chip, _PRIORITY_LABELS.get(prio, ""), size=7.2, bold=True,
                   color=WHITE, font=SANS, align=PP_ALIGN.CENTER,
                   anchor=MSO_ANCHOR.MIDDLE, spacing=120)
         body = slide.shapes.add_textbox(x + Inches(1.3), y + Inches(0.06),
@@ -634,14 +747,14 @@ def _add_insights_slide(prs, data: dict, insights: list[dict]) -> None:
         p1 = btf.paragraphs[0]
         r1 = p1.add_run()
         r1.text = str(ins.get("category", "")).upper()
-        r1.font.size = Pt(8.5)
+        r1.font.size = Pt(8)
         r1.font.bold = True
         r1.font.name = SANS
         r1.font.color.rgb = ACCENT_GREEN
         p2 = btf.add_paragraph()
         r2 = p2.add_run()
         r2.text = str(ins.get("text", ""))
-        r2.font.size = Pt(9.5)
+        r2.font.size = Pt(9)
         r2.font.name = SANS
         r2.font.color.rgb = DARK_GREEN
         y = Emu(int(y) + int(row_h) + int(gap))
@@ -667,7 +780,7 @@ def _add_ea_slide(prs, data: dict) -> None:
     col_w = Emu(int(col_w))
     top = Inches(1.08)
     card_gap = Inches(0.12)
-    col_h = Emu(int(SLIDE_H) - int(top) - int(Inches(0.26)))  # usable height
+    col_h = Emu(int(SLIDE_H) - int(top) - int(Inches(0.22)))  # usable height
 
     left_x = margin
     center_x = Emu(int(margin) + int(col_w) + int(gap))
@@ -705,21 +818,26 @@ def _add_ea_slide(prs, data: dict) -> None:
     hc1 = Inches(3.4)
     _trend_card(slide, center_x, y, col_w, hc1, data)
     y = Emu(int(y) + int(hc1) + int(card_gap))
-    hc2 = Inches(2.68)
+    hc2 = Emu(int(col_h) - int(hc1) - int(card_gap))
     _usage_data_card(slide, center_x, y, col_w, hc2, data)
 
-    # --- RIGHT column ---
+    # --- RIGHT column (locations/version split by their actual row counts) ---
+    hr3 = Inches(1.18)
+    hr4 = Emu(int(col_h) - int(Inches(1.18)) - int(Inches(1.9)) * 2
+              - 3 * int(card_gap))
+    tables_h = int(col_h) - int(hr3) - int(hr4) - 3 * int(card_gap)
+    n_loc = len((data.get("locations_top5") or [])[:5]) or 1
+    n_ver = len((data.get("versions_top5") or [])[:5]) or 1
+    hr1 = Emu(int(tables_h * (n_loc + 1) / (n_loc + n_ver + 2)))
+    hr2 = Emu(tables_h - int(hr1))
+
     y = top
-    hr1 = Inches(1.9)
     _locations_card(slide, right_x, y, col_w, hr1, data)
     y = Emu(int(y) + int(hr1) + int(card_gap))
-    hr2 = Inches(1.9)
     _version_card(slide, right_x, y, col_w, hr2, data)
     y = Emu(int(y) + int(hr2) + int(card_gap))
-    hr3 = Inches(1.18)
     _credits_card(slide, right_x, y, col_w, hr3, data)
     y = Emu(int(y) + int(hr3) + int(card_gap))
-    hr4 = Inches(0.86)
     _support_card(slide, right_x, y, col_w, hr4, data)
 
 
