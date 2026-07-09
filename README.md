@@ -122,6 +122,8 @@ So if your IP is `192.168.1.42`, teammates go to `http://192.168.1.42:8501`.
 ## GitHub Pages Browser Version
 
 The repository also includes a static hosted-safe version in `docs/`.
+See [`WEB_VERSION_GUIDE.md`](WEB_VERSION_GUIDE.md) for the team step-by-step
+input workflow using EPD contract/license data and Telemetry Tableau exports.
 
 - It is browser-only HTML/CSS/JavaScript.
 - It provides direct contract review blanks and editable finite/unlimited
