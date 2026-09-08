@@ -10,8 +10,9 @@ the full Streamlit script via AppTest — including the Generate path.
 Exits non-zero on any failure.
 """
 
-from __future__ import re
-import annotations
+from __future__ import annotations
+
+import re
 
 import sys
 import tempfile
