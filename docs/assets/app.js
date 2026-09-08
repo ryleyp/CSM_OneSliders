@@ -1062,43 +1062,58 @@
     return active.length ? active : [VLM_LANES[0]];
   }
 
-  function vlmChartSvg(series, emptyText = 'No VLM usage data') {
-    if (!series.length) return `<div class="empty">${esc(emptyText)}</div>`;
-    const lanes = activeVlmLanes(series);
-    // The viewBox matches the band's proportions on the .pptx (8.14 x 0.78in),
-    // so the miniature preview and the deck read the same.
-    const width = 760, height = 73, padL = 34, padR = 6, padT = 5, padB = 14;
+  // Evenly spaced label positions, always keeping the first and last period.
+  function vlmTicks(count, max) {
+    if (count <= max) return Array.from({ length: count }, (_, i) => i);
+    const step = (count - 1) / (max - 1);
+    const out = [];
+    for (let i = 0; i < max; i += 1) out.push(Math.round(i * step));
+    return Array.from(new Set(out));
+  }
+
+  function vlmScale(series, lanes) {
     const values = lanes.reduce((all, lane) => all.concat(series.map((r) => Number(r[lane.key]) || 0)), []);
     const loLabel = Math.min(...values), hiLabel = Math.max(...values);
-    const span0 = hiLabel - loLabel || 1;
-    const lo = loLabel - span0 * 0.12, hi = hiLabel + span0 * 0.12;
-    const span = hi - lo || 1;
-    const iw = width - padL - padR, ih = height - padT - padB;
-    const x = (i) => padL + iw * i / Math.max(series.length - 1, 1);
-    const y = (v) => padT + ih * (1 - (v - lo) / span);
-    const grid = [0, .5, 1].map((f) => `<line x1="${padL}" y1="${(padT + ih * f).toFixed(1)}" x2="${width - padR}" y2="${(padT + ih * f).toFixed(1)}" stroke="#f0f0f0"/>`).join('');
-    const yAxis = `<text x="${padL - 5}" y="${(padT + 3.5).toFixed(1)}" text-anchor="end" font-size="8" fill="#6e6e6e">${esc(fmt(hiLabel))}</text>`
-      + `<text x="${padL - 5}" y="${(padT + ih).toFixed(1)}" text-anchor="end" font-size="8" fill="#6e6e6e">${esc(fmt(loLabel))}</text>`;
+    const pad = (hiLabel - loLabel || 1) * 0.08;
+    const lo = loLabel - pad, hi = hiLabel + pad;
+    return { lo, hi, span: hi - lo || 1, loLabel, hiLabel };
+  }
+
+  // The band's height varies with the slide, so the SVG stretches to fill it
+  // and carries only the lines. Axis text is HTML around the plot instead of
+  // inside the viewBox, which keeps it crisp rather than squashed with it.
+  function vlmChartSvg(series, lanes, scale) {
+    const W = 1000, H = 300;
+    const x = (i) => W * i / Math.max(series.length - 1, 1);
+    const y = (v) => H * (1 - (v - scale.lo) / scale.span);
+    const grid = [0, .5, 1].map((f) => `<line x1="0" y1="${(H * f).toFixed(1)}" x2="${W}" y2="${(H * f).toFixed(1)}" stroke="#eef1ef" vector-effect="non-scaling-stroke"/>`).join('');
     const lines = lanes.map((lane) => {
       const pts = series.map((r, i) => `${x(i).toFixed(1)},${y(Number(r[lane.key]) || 0).toFixed(1)}`).join(' ');
-      const dots = series.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(Number(r[lane.key]) || 0).toFixed(1)}" r="1.8" fill="${lane.color}"/>`).join('');
-      return `<polyline points="${pts}" fill="none" stroke="${lane.color}" stroke-width="${lane.width}" stroke-linejoin="round"/>${dots}`;
+      return `<polyline points="${pts}" fill="none" stroke="${lane.color}" stroke-width="${lane.width}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
     }).join('');
-    const everyLabel = series.length <= 14;
-    const xLabels = series.map((r, i) => {
-      if (!everyLabel && i !== 0 && i !== series.length - 1) return '';
-      const anchor = i === 0 ? 'start' : i === series.length - 1 ? 'end' : 'middle';
-      return `<text x="${x(i).toFixed(1)}" y="${height - 3}" text-anchor="${anchor}" font-size="8.5" fill="#6e6e6e">${esc(r.period)}</text>`;
-    }).join('');
-    return `<svg viewBox="0 0 ${width} ${height}" class="vlm-svg" role="img" aria-label="VLM connected, disconnected and total clients over time">${grid}${yAxis}${lines}${xLabels}</svg>`;
+    return `<svg class="vlm-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="VLM connected, disconnected and total clients over time">${grid}${lines}</svg>`;
   }
 
   // The legend lives in the card's title row, matching where it sits on the
-  // .pptx, so the short band keeps its full height for the plot.
+  // .pptx, so the band keeps its full height for the plot.
   function vlmCard(series) {
-    const keys = (series.length ? activeVlmLanes(series) : [])
-      .map((lane) => `<span class="vlm-key"><i style="background:${lane.color}"></i>${esc(lane.label)}</span>`).join('');
-    return `<div class="card vlm-card"><div class="card-title vlm-title"><span>VLM Usage Trend</span><span class="vlm-legend">${keys}</span></div><div class="card-body">${vlmChartSvg(series)}</div></div>`;
+    const lanes = series.length ? activeVlmLanes(series) : [];
+    const keys = lanes.map((lane) => `<span class="vlm-key"><i style="background:${lane.color}"></i>${esc(lane.label)}</span>`).join('');
+    const head = `<div class="card-title vlm-title"><span>VLM Usage Trend</span><span class="vlm-legend">${keys}</span></div>`;
+    if (!series.length) return `<div class="card vlm-card">${head}<div class="card-body"><div class="empty">No VLM usage data</div></div></div>`;
+    const scale = vlmScale(series, lanes);
+    const at = (v) => (100 * (1 - (v - scale.lo) / scale.span)).toFixed(1);
+    const yAxis = [scale.hiLabel, scale.loLabel]
+      .map((v) => `<span style="top:${at(v)}%">${esc(fmt(v))}</span>`).join('');
+    const xAxis = vlmTicks(series.length, 8).map((i) => {
+      const edge = i === 0 ? ' start' : i === series.length - 1 ? ' end' : '';
+      const pct = (100 * i / Math.max(series.length - 1, 1)).toFixed(2);
+      return `<span class="vlm-tick${edge}" style="left:${pct}%">${esc(series[i].period)}</span>`;
+    }).join('');
+    return `<div class="card vlm-card">${head}<div class="card-body vlm-body">`
+      + `<div class="vlm-plot"><div class="vlm-yaxis">${yAxis}</div>`
+      + `<div class="vlm-canvas">${vlmChartSvg(series, lanes, scale)}</div></div>`
+      + `<div class="vlm-xaxis">${xAxis}</div></div></div>`;
   }
 
   function card(title, body, extra = '') {
@@ -2052,14 +2067,8 @@
         lx -= 0.07;
       });
     }
-    const values = lanes.reduce((all, lane) => all.concat(data.map((r) => Number(r[lane.key]) || 0)), []);
-    const loLabel = Math.min(...values);
-    const hiLabel = Math.max(...values);
-    const span0 = hiLabel - loLabel || 1;
-    const lo = loLabel - span0 * 0.12;
-    const hi = hiLabel + span0 * 0.12;
-    const span = hi - lo || 1;
-    const plot = { x: area.x + 0.40, y: area.y + 0.06, w: area.w - 0.50, h: area.h - 0.30 };
+    const { lo, span, loLabel, hiLabel } = vlmScale(data, lanes);
+    const plot = { x: area.x + 0.40, y: area.y + 0.03, w: area.w - 0.50, h: area.h - 0.24 };
     [0, 0.5, 1].forEach((f) => {
       slide.addShape(shapes.line, { x: plot.x, y: plot.y + plot.h * f, w: plot.w, h: 0, line: { color: 'EEF1EF', width: 0.5 } });
     });
@@ -2079,14 +2088,13 @@
         });
       }
     });
-    const labelW = plot.w / Math.max(data.length - 1, 1);
-    const everyLabel = data.length <= 14 && labelW >= 0.42;
-    const labelY = area.y + area.h - 0.15;
-    data.forEach((row, i) => {
-      if (!everyLabel && i !== 0 && i !== data.length - 1) return;
+    // A 'Q1 2021' label is about 0.42in at 6.5pt, so 0.62in slots keep a gap.
+    const labelW = 0.62;
+    const labelY = area.y + area.h - 0.14;
+    vlmTicks(data.length, Math.max(2, Math.min(8, Math.floor(plot.w / labelW)))).forEach((i) => {
       const align = i === 0 ? 'left' : i === data.length - 1 ? 'right' : 'center';
       const x = i === 0 ? px(0) : i === data.length - 1 ? px(i) - labelW : px(i) - labelW / 2;
-      addText(slide, row.period, { x, y: labelY, w: labelW, h: 0.15, fontSize: 6.5, color: PPT.gray, align });
+      addText(slide, data[i].period, { x, y: labelY, w: labelW, h: 0.15, fontSize: 6.5, color: PPT.gray, align });
     });
   }
 
@@ -2167,8 +2175,10 @@
     const trainingH = showVlm ? 0.74 : 1.18;
     const supportH = showVlm ? 0.56 : 0.86;
     const tablesH = (centerBottom - top) - trainingH - supportH - 0.36;
-    // Locations keeps its unsqueezed height, so Version Usage absorbs the band.
-    const hLoc = Math.min(3.8 * (nLoc + 1) / (nLoc + nVer + 2), tablesH - 0.55);
+    // With the band on, the two tables share the reduced space by row count, so
+    // Version Usage keeps enough room for its rows.
+    const locShare = (nLoc + 1) / (nLoc + nVer + 2);
+    const hLoc = showVlm ? tablesH * locShare : Math.min(3.8 * locShare, tablesH - 0.55);
     area = addCard(slide, pptx, 'Top Site Locations', rightX, top, colW, hLoc);
     addSimpleTable(slide, pptx, ['COUNTRY', 'STATE', 'CITY', 'COUNT'], data.locations_top5.map((r) => [
       { text: r.country || '' },
@@ -2207,8 +2217,12 @@
     if (showVlm) {
       const bandY = centerBottom + 0.14;
       const bandW = colW * 2 + gap;
-      area = addCard(slide, pptx, 'VLM Usage Trend', centerX, bandY, bandW, bandH);
-      addVlmTrend(slide, pptx, data.vlm.df, area, { y: bandY + 0.09, right: centerX + bandW - 0.14 });
+      // A short, wide card: addCard's standard 0.52in of title and padding would
+      // eat 40% of the band, so the chrome is drawn tighter here.
+      addRect(slide, pptx, centerX, bandY, bandW, bandH, PPT.white, PPT.border);
+      addText(slide, 'VLM USAGE TREND', { x: centerX + 0.12, y: bandY + 0.07, w: bandW * 0.4, h: 0.18, fontSize: 7.5, bold: true, color: PPT.accent });
+      area = { x: centerX + 0.14, y: bandY + 0.29, w: bandW - 0.28, h: bandH - 0.37 };
+      addVlmTrend(slide, pptx, data.vlm.df, area, { y: bandY + 0.06, right: centerX + bandW - 0.14 });
     }
   }
 
