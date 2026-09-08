@@ -458,11 +458,15 @@ details textarea {
   height: clamp(2px, .3cqw, 4px);
   border-radius: 2px;
 }
+/* Lane colours live here rather than in style="" because of the page's CSP. */
+.lane-total i { background: #013324; }
+.lane-connected i { background: #18af7c; }
+.lane-disconnected i { background: #c88a1e; }
 
 /* The plot fills whatever height the band gets; the axis labels sit outside
    the stretched viewBox so they stay crisp. */
 .vlm-body { display: flex; flex-direction: column; gap: 2px; }
-.vlm-plot { flex: 1 1 auto; min-height: 0; display: flex; gap: clamp(2px, .4cqw, 6px); }
+.vlm-plot { flex: 1 1 auto; min-height: 0; display: flex; gap: clamp(2px, .4cqw, 6px); padding: clamp(3px, .42cqw, 5px) 0; }
 .vlm-yaxis { position: relative; flex: 0 0 auto; width: clamp(16px, 2.6cqw, 34px); }
 .vlm-yaxis span {
   position: absolute;

@@ -1034,19 +1034,21 @@
 
   function chartSvg(series, emptyText = 'No machine-count data', label = 'Total machines over time') {
     if (!series.length) return `<div class="empty">${esc(emptyText)}</div>`;
-    const width = 340, height = 205, padL = 34, padR = 8, padT = 8, padB = 20;
+    const width = 340, height = 205, padL = 36, padR = 8, padT = 8, padB = 20;
     const totals = series.map((r) => r.total);
-    const periods = series.map((r) => r.period);
-    let lo = Math.min(...totals), hi = Math.max(...totals);
-    let span = hi - lo || 1;
-    lo -= span * 0.08; hi += span * 0.08; span = hi - lo;
+    const scale = niceScale(totals, 4);
     const iw = width - padL - padR, ih = height - padT - padB;
     const x = (i) => padL + iw * i / Math.max(series.length - 1, 1);
-    const y = (v) => padT + ih * (1 - (v - lo) / span);
+    const y = (v) => padT + ih * (1 - (v - scale.lo) / scale.span);
     const pts = totals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
     const peakI = totals.indexOf(Math.max(...totals));
-    const grid = [0, .5, 1].map((f) => `<line x1="${padL}" y1="${(padT + ih * f).toFixed(1)}" x2="${width - padR}" y2="${(padT + ih * f).toFixed(1)}" stroke="#f0f0f0"/>`).join('');
-    return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="${esc(label)}">${grid}<polyline points="${pts}" fill="none" stroke="#18af7c" stroke-width="2.5"/><circle cx="${x(peakI).toFixed(1)}" cy="${y(totals[peakI]).toFixed(1)}" r="5" fill="#18af7c" stroke="#fff" stroke-width="2"/><text x="${x(0).toFixed(0)}" y="${height - 5}" font-size="8" fill="#6e6e6e">${esc(periods[0])}</text><text x="${x(series.length - 1).toFixed(0)}" y="${height - 5}" text-anchor="end" font-size="8" fill="#6e6e6e">${esc(periods[periods.length - 1])}</text></svg>`;
+    const grid = scale.ticks.map((v) => `<line x1="${padL}" y1="${y(v).toFixed(1)}" x2="${width - padR}" y2="${y(v).toFixed(1)}" stroke="#eef1ef"/>`
+      + `<text x="${padL - 5}" y="${(y(v) + 2.8).toFixed(1)}" text-anchor="end" font-size="7.5" fill="#6e6e6e">${esc(fmt(v))}</text>`).join('');
+    const xAxis = tickIndices(series.length, 5).map((i) => {
+      const anchor = i === 0 ? 'start' : i === series.length - 1 ? 'end' : 'middle';
+      return `<text x="${x(i).toFixed(1)}" y="${height - 5}" text-anchor="${anchor}" font-size="7.5" fill="#6e6e6e">${esc(series[i].period)}</text>`;
+    }).join('');
+    return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="${esc(label)}">${grid}<polyline points="${pts}" fill="none" stroke="#18af7c" stroke-width="2.5" stroke-linejoin="round"/><circle cx="${x(peakI).toFixed(1)}" cy="${y(totals[peakI]).toFixed(1)}" r="5" fill="#18af7c" stroke="#fff" stroke-width="2"/>${xAxis}</svg>`;
   }
 
   // The three VLM lanes, in draw/legend order. Total sits on top of the two
@@ -1063,7 +1065,8 @@
   }
 
   // Evenly spaced label positions, always keeping the first and last period.
-  function vlmTicks(count, max) {
+  // Evenly spaced label positions, always keeping the first and last period.
+  function tickIndices(count, max) {
     if (count <= max) return Array.from({ length: count }, (_, i) => i);
     const step = (count - 1) / (max - 1);
     const out = [];
@@ -1071,12 +1074,25 @@
     return Array.from(new Set(out));
   }
 
+  // A value axis on round numbers: a 1/2/2.5/5 x 10^n step sized for about
+  // `target` gridlines, with the range widened to the ticks either side of
+  // the data. Counts never dip below zero.
+  function niceScale(values, target = 4) {
+    let min = Math.min(...values), max = Math.max(...values);
+    if (min === max) { min -= Math.abs(min) * 0.1 || 1; max += Math.abs(max) * 0.1 || 1; }
+    const rough = (max - min) / Math.max(target - 1, 1);
+    const mag = 10 ** Math.floor(Math.log10(rough));
+    const norm = rough / mag;
+    const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+    const lo = Math.max(Math.min(...values) >= 0 ? 0 : -Infinity, Math.floor(min / step) * step);
+    const hi = Math.ceil(max / step) * step;
+    const ticks = [];
+    for (let v = lo; v <= hi + step / 2; v += step) ticks.push(Math.round(v * 1e6) / 1e6);
+    return { lo, hi, span: hi - lo || 1, ticks };
+  }
+
   function vlmScale(series, lanes) {
-    const values = lanes.reduce((all, lane) => all.concat(series.map((r) => Number(r[lane.key]) || 0)), []);
-    const loLabel = Math.min(...values), hiLabel = Math.max(...values);
-    const pad = (hiLabel - loLabel || 1) * 0.08;
-    const lo = loLabel - pad, hi = hiLabel + pad;
-    return { lo, hi, span: hi - lo || 1, loLabel, hiLabel };
+    return niceScale(lanes.reduce((all, lane) => all.concat(series.map((r) => Number(r[lane.key]) || 0)), []), 4);
   }
 
   // The band's height varies with the slide, so the SVG stretches to fill it
@@ -1086,7 +1102,7 @@
     const W = 1000, H = 300;
     const x = (i) => W * i / Math.max(series.length - 1, 1);
     const y = (v) => H * (1 - (v - scale.lo) / scale.span);
-    const grid = [0, .5, 1].map((f) => `<line x1="0" y1="${(H * f).toFixed(1)}" x2="${W}" y2="${(H * f).toFixed(1)}" stroke="#eef1ef" vector-effect="non-scaling-stroke"/>`).join('');
+    const grid = scale.ticks.map((v) => `<line x1="0" y1="${y(v).toFixed(1)}" x2="${W}" y2="${y(v).toFixed(1)}" stroke="#eef1ef" vector-effect="non-scaling-stroke"/>`).join('');
     const lines = lanes.map((lane) => {
       const pts = series.map((r, i) => `${x(i).toFixed(1)},${y(Number(r[lane.key]) || 0).toFixed(1)}`).join(' ');
       return `<polyline points="${pts}" fill="none" stroke="${lane.color}" stroke-width="${lane.width}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
@@ -1098,22 +1114,28 @@
   // .pptx, so the band keeps its full height for the plot.
   function vlmCard(series) {
     const lanes = series.length ? activeVlmLanes(series) : [];
-    const keys = lanes.map((lane) => `<span class="vlm-key"><i style="background:${lane.color}"></i>${esc(lane.label)}</span>`).join('');
+    const keys = lanes.map((lane) => `<span class="vlm-key lane-${lane.key}"><i></i>${esc(lane.label)}</span>`).join('');
     const head = `<div class="card-title vlm-title"><span>VLM Usage Trend</span><span class="vlm-legend">${keys}</span></div>`;
     if (!series.length) return `<div class="card vlm-card">${head}<div class="card-body"><div class="empty">No VLM usage data</div></div></div>`;
     const scale = vlmScale(series, lanes);
     const at = (v) => (100 * (1 - (v - scale.lo) / scale.span)).toFixed(1);
-    const yAxis = [scale.hiLabel, scale.loLabel]
-      .map((v) => `<span style="top:${at(v)}%">${esc(fmt(v))}</span>`).join('');
-    const xAxis = vlmTicks(series.length, 8).map((i) => {
+    // Positions go in data attributes, not style="": the page's CSP forbids
+    // inline styles, so placeAxisLabels applies them through the CSSOM.
+    const yAxis = scale.ticks.map((v) => `<span data-top="${at(v)}">${esc(fmt(v))}</span>`).join('');
+    const xAxis = tickIndices(series.length, 8).map((i) => {
       const edge = i === 0 ? ' start' : i === series.length - 1 ? ' end' : '';
       const pct = (100 * i / Math.max(series.length - 1, 1)).toFixed(2);
-      return `<span class="vlm-tick${edge}" style="left:${pct}%">${esc(series[i].period)}</span>`;
+      return `<span class="vlm-tick${edge}" data-left="${pct}">${esc(series[i].period)}</span>`;
     }).join('');
     return `<div class="card vlm-card">${head}<div class="card-body vlm-body">`
       + `<div class="vlm-plot"><div class="vlm-yaxis">${yAxis}</div>`
       + `<div class="vlm-canvas">${vlmChartSvg(series, lanes, scale)}</div></div>`
       + `<div class="vlm-xaxis">${xAxis}</div></div></div>`;
+  }
+
+  function placeAxisLabels(root) {
+    root.querySelectorAll('[data-top]').forEach((el) => { el.style.top = `${el.dataset.top}%`; });
+    root.querySelectorAll('[data-left]').forEach((el) => { el.style.left = `${el.dataset.left}%`; });
   }
 
   function card(title, body, extra = '') {
@@ -1613,6 +1635,7 @@
     $('vlmText').closest('.vlm-block').classList.toggle('on', data.vlm.show);
     $('warnings').innerHTML = warnings(data).map((w) => `<div class="warning">${esc(w)}</div>`).join('');
     $('slidePreview').innerHTML = renderSlide(data);
+    placeAxisLabels($('slidePreview'));
     const insightItems = generateInsights(data);
     $('insights').innerHTML = insightItems.length
       ? insightItems.map((i) => `<div class="insight"><strong>${esc(i.cat)}</strong>${esc(i.text)}</div>`).join('')
@@ -2015,36 +2038,46 @@
     }
     const shapes = shapeNames(pptx);
     const values = data.map((r) => r.total);
-    let lo = Math.min(...values);
-    let hi = Math.max(...values);
-    const span0 = hi - lo || 1;
-    lo -= span0 * 0.08;
-    hi += span0 * 0.08;
-    const span = hi - lo || 1;
-    const plot = { x: area.x + 0.24, y: area.y + 0.12, w: area.w - 0.34, h: area.h - 0.48 };
-    [0, 0.5, 1].forEach((f) => {
-      const y = plot.y + plot.h * f;
-      slide.addShape(shapes.line, { x: plot.x, y, w: plot.w, h: 0, line: { color: 'EEF1EF', width: 0.5 } });
-    });
-    const point = (i) => ({
-      x: plot.x + plot.w * i / Math.max(data.length - 1, 1),
-      y: plot.y + plot.h * (1 - (values[i] - lo) / span)
-    });
+    const scale = niceScale(values, 4);
+    const plot = { x: area.x + 0.42, y: area.y + 0.10, w: area.w - 0.52, h: area.h - 0.44 };
+    const px = (i) => plot.x + plot.w * i / Math.max(data.length - 1, 1);
+    const py = (v) => plot.y + plot.h * (1 - (v - scale.lo) / scale.span);
+    addValueAxis(slide, pptx, scale, area.x, plot, py);
     for (let i = 1; i < data.length; i += 1) {
-      const a = point(i - 1);
-      const b = point(i);
+      const ay = py(values[i - 1]);
+      const by = py(values[i]);
       // A shape extent must be positive; a rising segment is drawn top-down
       // and flipped, since PowerPoint renders a negative height unpredictably.
       slide.addShape(shapes.line, {
-        x: a.x, y: Math.min(a.y, b.y), w: b.x - a.x, h: Math.abs(b.y - a.y),
-        flipV: b.y < a.y, line: { color: PPT.accent, width: 1.8 }
+        x: px(i - 1), y: Math.min(ay, by), w: px(i) - px(i - 1), h: Math.abs(by - ay),
+        flipV: by < ay, line: { color: PPT.accent, width: 1.8 }
       });
     }
     const peakI = values.indexOf(Math.max(...values));
-    const p = point(peakI);
-    slide.addShape(shapes.ellipse, { x: p.x - 0.05, y: p.y - 0.05, w: 0.1, h: 0.1, fill: { color: PPT.accent }, line: { color: PPT.white, width: 1 } });
-    addText(slide, data[0].period, { x: plot.x, y: area.y + area.h - 0.22, w: 1.4, h: 0.16, fontSize: 6.5, color: PPT.gray });
-    addText(slide, data[data.length - 1].period, { x: plot.x + plot.w - 1.4, y: area.y + area.h - 0.22, w: 1.4, h: 0.16, fontSize: 6.5, color: PPT.gray, align: 'right' });
+    slide.addShape(shapes.ellipse, { x: px(peakI) - 0.05, y: py(values[peakI]) - 0.05, w: 0.1, h: 0.1, fill: { color: PPT.accent }, line: { color: PPT.white, width: 1 } });
+    addPeriodAxis(slide, data, plot, px, area.y + area.h - 0.20, 6);
+  }
+
+  // Gridlines on the round-number ticks, each labelled in the gutter left of
+  // the plot.
+  function addValueAxis(slide, pptx, scale, gutterX, plot, py) {
+    const shapes = shapeNames(pptx);
+    scale.ticks.forEach((v) => {
+      const y = py(v);
+      slide.addShape(shapes.line, { x: plot.x, y, w: plot.w, h: 0, line: { color: 'EEF1EF', width: 0.5 } });
+      addText(slide, fmt(v), { x: gutterX, y: y - 0.07, w: plot.x - gutterX - 0.05, h: 0.14, fontSize: 6, color: PPT.gray, align: 'right', valign: 'mid' });
+    });
+  }
+
+  // Period labels under the plot, evenly spaced. A 'Q1 2021' label is about
+  // 0.42in at 6.5pt, so 0.62in slots keep a gap between neighbours.
+  function addPeriodAxis(slide, data, plot, px, labelY, maxLabels) {
+    const labelW = 0.62;
+    tickIndices(data.length, Math.max(2, Math.min(maxLabels, Math.floor(plot.w / labelW)))).forEach((i) => {
+      const align = i === 0 ? 'left' : i === data.length - 1 ? 'right' : 'center';
+      const x = i === 0 ? px(0) : i === data.length - 1 ? px(i) - labelW : px(i) - labelW / 2;
+      addText(slide, data[i].period, { x, y: labelY, w: labelW, h: 0.15, fontSize: 6.5, color: PPT.gray, align });
+    });
   }
 
   function addVlmTrend(slide, pptx, series, area, legend) {
@@ -2067,15 +2100,11 @@
         lx -= 0.07;
       });
     }
-    const { lo, span, loLabel, hiLabel } = vlmScale(data, lanes);
-    const plot = { x: area.x + 0.40, y: area.y + 0.03, w: area.w - 0.50, h: area.h - 0.24 };
-    [0, 0.5, 1].forEach((f) => {
-      slide.addShape(shapes.line, { x: plot.x, y: plot.y + plot.h * f, w: plot.w, h: 0, line: { color: 'EEF1EF', width: 0.5 } });
-    });
-    addText(slide, fmt(hiLabel), { x: area.x, y: plot.y - 0.04, w: 0.36, h: 0.14, fontSize: 6, color: PPT.gray, align: 'right' });
-    addText(slide, fmt(loLabel), { x: area.x, y: plot.y + plot.h - 0.09, w: 0.36, h: 0.14, fontSize: 6, color: PPT.gray, align: 'right' });
+    const scale = vlmScale(data, lanes);
+    const plot = { x: area.x + 0.42, y: area.y + 0.08, w: area.w - 0.52, h: area.h - 0.29 };
     const px = (i) => plot.x + plot.w * i / Math.max(data.length - 1, 1);
-    const py = (v) => plot.y + plot.h * (1 - (v - lo) / span);
+    const py = (v) => plot.y + plot.h * (1 - (v - scale.lo) / scale.span);
+    addValueAxis(slide, pptx, scale, area.x, plot, py);
     lanes.forEach((lane) => {
       for (let i = 1; i < data.length; i += 1) {
         const ay = py(Number(data[i - 1][lane.key]) || 0);
@@ -2088,14 +2117,7 @@
         });
       }
     });
-    // A 'Q1 2021' label is about 0.42in at 6.5pt, so 0.62in slots keep a gap.
-    const labelW = 0.62;
-    const labelY = area.y + area.h - 0.14;
-    vlmTicks(data.length, Math.max(2, Math.min(8, Math.floor(plot.w / labelW)))).forEach((i) => {
-      const align = i === 0 ? 'left' : i === data.length - 1 ? 'right' : 'center';
-      const x = i === 0 ? px(0) : i === data.length - 1 ? px(i) - labelW : px(i) - labelW / 2;
-      addText(slide, data[i].period, { x, y: labelY, w: labelW, h: 0.15, fontSize: 6.5, color: PPT.gray, align });
-    });
+    addPeriodAxis(slide, data, plot, px, area.y + area.h - 0.14, 8);
   }
 
   function addStatsCard(slide, pptx, area, stats) {

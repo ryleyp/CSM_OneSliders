@@ -10,7 +10,8 @@ the full Streamlit script via AppTest — including the Generate path.
 Exits non-zero on any failure.
 """
 
-from __future__ import annotations
+from __future__ import re
+import annotations
 
 import sys
 import tempfile
@@ -410,7 +411,8 @@ def test_github_pages_lite_security():
     # A rising trend segment used to be drawn with a negative height, which is
     # invalid OOXML and made PowerPoint scatter the line.
     check("pages lite draws trend segments with a positive height",
-          "flipV: b.y < a.y" in app_js and "Math.abs(b.y - a.y)" in app_js)
+          re.search(r"flipV: (b\.y|by) < (a\.y|ay)", app_js) is not None
+          and re.search(r"Math\.abs\((b\.y - a\.y|by - ay)\)", app_js) is not None)
     check("pages lite has profile import/export", "currentProfilePayload" in app_js)
     check("pages lite has batch deck generation", "downloadBatchPptx" in app_js)
     check("pages lite does not load browser OCR",
