@@ -88,6 +88,17 @@ SAMPLE_VERSIONS_TEXT = "\n".join([
     "VeriStand\t2023\t72",
 ])
 
+SAMPLE_VLM_TEXT = "\n".join([
+    "Quarter of Usage Qtr Date\tLabel - Total Clients\tUsage Type\t"
+    "Distinct Clients\tEA or Server selected",
+    "2024 Q1\t\tDisconnected_Usage\t645\tEA-15552",
+    "2024 Q2\t\tDisconnected_Usage\t726\tEA-15552",
+    "2024 Q3\t\tDisconnected_Usage\t824\tEA-15552",
+    "2024 Q4\t\tDisconnected_Usage\t882\tEA-15552",
+    "2025 Q1\t\tDisconnected_Usage\t917\tEA-15552",
+    "2025 Q2\t\tDisconnected_Usage\t968\tEA-15552",
+])
+
 FINITE_LICENSE_TYPES = ["Concurrent", "Named-User or Computer-Based"]
 
 
@@ -145,6 +156,8 @@ def _apply_profile(name: str) -> None:
         st.session_state[k] = v
     for k, v in payload["fields"].items():
         st.session_state[k] = _truthy(v) if k == "f_systemlink_snow" else v
+    for k in prof.SETTING_KEYS:
+        st.session_state[k] = _truthy(payload["settings"].get(k, False))
     st.session_state["finite_seed"] = _finite_df(payload["finite_licenses"])
     st.session_state["bundle_seed"] = pd.DataFrame(
         {"bundle_name": pd.Series(payload["bundles"] or [], dtype="object")})
@@ -172,6 +185,8 @@ def _data_from_profile(payload: dict) -> dict:
     machine_df = dp.parse_machine_count(texts.get("machine_text", ""))
     locations_df = dp.parse_locations(texts.get("locations_text", ""))
     versions_df = dp.parse_usage_versions(texts.get("versions_text", ""))
+    show_vlm = _truthy(payload.get("settings", {}).get("include_vlm", False))
+    vlm_df = dp.parse_vlm_usage(texts.get("vlm_text", "")) if show_vlm else None
     purchased_n = dp._to_number(fields.get("f_flex_purchased", ""))
     used_n = dp._to_number(fields.get("f_flex_used", ""))
     pct_used = (round(used_n / purchased_n * 100.0)
@@ -191,6 +206,7 @@ def _data_from_profile(payload: dict) -> dict:
         "finite_licenses": payload.get("finite_licenses", []),
         "machine": {"df": machine_df,
                     "stats": dp.compute_machine_stats(machine_df)},
+        "vlm": {"df": vlm_df, "show": show_vlm},
         "locations_top5": dp.top_locations(locations_df, 5),
         "versions_top5": dp.top_versions(versions_df, 5),
         "credits": {"purchased": fields.get("f_flex_purchased", "") or "—",
@@ -313,8 +329,26 @@ with c3:
                                  key="versions_text",
                                  label_visibility="collapsed")
 
+st.subheader("4. VLM Usage (optional)")
+include_vlm = st.checkbox(
+    "Include the VLM usage graph on the slide", key="include_vlm",
+    help=("Adds a second trend chart under Software Usage Trend, plotting "
+          "distinct VLM clients per quarter."),
+)
+if include_vlm:
+    st.caption("Paste the VLM export: **Quarter · Usage Type · Distinct "
+               "Clients**  \n"
+               "e.g. `2021 Q1⇥Disconnected_Usage⇥645`  \n"
+               "Usage types are summed into one quarterly total.")
+    st.button("Load example", key="load_vlm_example",
+              on_click=_load_example, args=("vlm_text", SAMPLE_VLM_TEXT))
+vlm_text = st.text_area("VLM usage table", height=140, key="vlm_text",
+                        label_visibility="collapsed",
+                        disabled=not include_vlm)
+
 # Live previews so the user can confirm parsing before generating.
 machine_df = dp.parse_machine_count(machine_text)
+vlm_df = dp.parse_vlm_usage(vlm_text) if include_vlm else None
 locations_df = dp.parse_locations(
     locations_text,
     avoid_product_double_count=avoid_location_double_count,
@@ -332,6 +366,9 @@ with st.expander("Preview parsed tables", expanded=False):
     with pc3:
         st.write("**Usage versions**")
         st.dataframe(versions_df, width="stretch", hide_index=True)
+    if include_vlm:
+        st.write("**VLM usage**")
+        st.dataframe(vlm_df, width="stretch", hide_index=True)
 
 # =========================================================================== #
 # PART 2 — Contract review blanks
@@ -501,6 +538,7 @@ def _collect_data() -> dict:
         "bundles": _current_bundles(),
         "finite_licenses": _current_finite_rows(),
         "machine": {"df": machine_df, "stats": stats},
+        "vlm": {"df": vlm_df, "show": include_vlm},
         "locations_top5": dp.top_locations(locations_df, 5),
         "versions_top5": dp.top_versions(versions_df, 5),
         "credits": {

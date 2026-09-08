@@ -35,9 +35,10 @@ def _fmt(value) -> str:
 # --------------------------------------------------------------------------- #
 # SVG line chart (single series + dashed trend + peak marker)
 # --------------------------------------------------------------------------- #
-def _chart_svg(df, width=340, height=210) -> str:
+def _chart_svg(df, width=340, height=210, *, empty_text="No machine-count data",
+               label="Total machines over time") -> str:
     if df is None or getattr(df, "empty", True):
-        return f'<div class="empty">No machine-count data</div>'
+        return f'<div class="empty">{_e(empty_text)}</div>'
     periods = [str(p) for p in df["period"].tolist()]
     totals = [float(t) for t in df["total"].tolist()]
     n = len(totals)
@@ -88,7 +89,7 @@ def _chart_svg(df, width=340, height=210) -> str:
     return (
         f'<svg viewBox="0 0 {width} {height}" width="100%" '
         f'preserveAspectRatio="xMidYMid meet" role="img" '
-        f'aria-label="Total machines over time">'
+        f'aria-label="{_e(label)}">'
         f"{gridlines}{trend_line}"
         f'<polyline points="{pts}" fill="none" stroke="{ACCENT}" '
         f'stroke-width="2.5" stroke-linejoin="round"/>'
@@ -146,6 +147,13 @@ def _finite_card(data) -> str:
 def _trend_card(data) -> str:
     return _card("Software Usage Trend",
                  _chart_svg(data.get("machine", {}).get("df")))
+
+
+def _vlm_card(data) -> str:
+    return _card("VLM Usage Trend",
+                 _chart_svg(data.get("vlm", {}).get("df"),
+                            empty_text="No VLM usage data",
+                            label="VLM distinct clients over time"))
 
 
 def _usage_card(data) -> str:
@@ -323,8 +331,10 @@ def generate_preview_html(data: dict) -> str:
 
     left = (_contract_card(data) + _bundles_card(data)
             + _finite_card(data).replace('class="card "', 'class="card grow"'))
-    center = (_trend_card(data).replace('class="card "', 'class="card grow"')
-              + _usage_card(data))
+    center = _trend_card(data).replace('class="card "', 'class="card grow"')
+    if data.get("vlm", {}).get("show"):
+        center += _vlm_card(data).replace('class="card "', 'class="card grow"')
+    center += _usage_card(data)
     right = (_locations_card(data) + _versions_card(data)
              + _credits_card(data) + _support_card(data))
 

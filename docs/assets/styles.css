@@ -116,6 +116,10 @@ textarea {
 }
 .check input { width: auto; }
 
+.vlm-block { display: grid; gap: 10px; margin-top: 12px; }
+.vlm-block textarea { min-height: 110px; }
+.vlm-block:not(.on) textarea { opacity: .55; }
+
 button {
   border: 0;
   background: var(--dark);
@@ -403,6 +407,51 @@ details textarea {
 .col.left { grid-template-rows: minmax(0, .9fr) minmax(0, .75fr) minmax(0, 1.75fr); }
 .col.center { grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr); }
 .col.right { grid-template-rows: minmax(0, 1.08fr) minmax(0, 1.08fr) minmax(0, .66fr) minmax(0, .58fr); }
+
+/* Optional VLM graph: a wide band under the centre and right columns, matching
+   the .pptx split (1.30in band, content bottom at 5.84in). The left column
+   spans both rows, so its cards keep the height they have without the band. */
+.slide-grid.with-vlm { grid-template-rows: minmax(0, 1fr) minmax(0, .273fr); }
+.slide-grid.with-vlm .col.left { grid-row: 1 / 3; }
+/* Software Usage Trend and Top Site Locations keep their size; the four cards
+   below them absorb the band. */
+.slide-grid.with-vlm .col.center { grid-template-rows: minmax(0, 1.25fr) minmax(0, .49fr); }
+.slide-grid.with-vlm .col.right { grid-template-rows: minmax(0, 1.08fr) minmax(0, .6fr) minmax(0, .4fr) minmax(0, .42fr); }
+.slide-grid.with-vlm .col.center .card:last-child,
+.slide-grid.with-vlm .col.right .card:nth-child(n+2) { padding: 2%; }
+.slide-grid.with-vlm .col.center .card:last-child .card-title,
+.slide-grid.with-vlm .col.right .card:nth-child(n+2) .card-title { font-size: clamp(5px, .7cqw, 8px); margin-bottom: 1%; }
+.slide-grid.with-vlm .stats .big { font-size: clamp(10px, 1.7cqw, 20px); }
+.slide-grid.with-vlm .stats .lbl { font-size: clamp(4.6px, .64cqw, 7.5px); }
+.slide-grid.with-vlm .stats .per { font-size: clamp(4.2px, .56cqw, 6.6px); }
+.slide-grid.with-vlm .strip { font-size: clamp(4.6px, .68cqw, 7.5px); padding: 1.6%; margin-top: 1.6%; }
+.slide-grid.with-vlm .strip .pct { font-size: clamp(8px, 1.2cqw, 15px); }
+.slide-grid.with-vlm .stats3 .med { font-size: clamp(8px, 1.15cqw, 14px); }
+.slide-grid.with-vlm .stats3 .lbl { font-size: clamp(4.6px, .64cqw, 7.5px); }
+.slide-grid.with-vlm .support-card b { font-size: clamp(6.4px, .88cqw, 10px); }
+.slide-grid.with-vlm .support-card .scope { font-size: clamp(5px, .66cqw, 7.5px); margin-top: 1%; }
+.slide-grid.with-vlm .support-card .snow { margin-top: 0; }
+.slide-grid.with-vlm .version-table { font-size: clamp(4.2px, .56cqw, 6.4px); }
+.slide-grid.with-vlm .version-table th { font-size: clamp(4px, .52cqw, 5.9px); }
+.slide-grid.with-vlm .version-table th,
+.slide-grid.with-vlm .version-table td { padding: .9% 1.7%; }
+
+.vlm-card { grid-column: 2 / 4; grid-row: 2; }
+.vlm-card .card-body { display: flex; min-height: 0; }
+.vlm-svg { width: 100%; height: 100%; }
+.vlm-title { display: flex; align-items: center; justify-content: space-between; gap: 2%; }
+.vlm-legend { display: flex; align-items: center; gap: 2.2%; }
+.vlm-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--gray);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+.vlm-key i { display: inline-block; width: 12px; height: 2px; }
 
 .card {
   border: 1px solid #ddd;

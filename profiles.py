@@ -27,7 +27,10 @@ FIELD_KEYS = [
     "f_support_tier", "f_support_scope", "f_systemlink_snow",
     "f_flex_purchased", "f_flex_used",
 ]
-TEXT_KEYS = ["machine_text", "locations_text", "versions_text"]
+TEXT_KEYS = ["machine_text", "locations_text", "versions_text", "vlm_text"]
+
+# Non-text toggles a profile carries.
+SETTING_KEYS = ["include_vlm"]
 
 
 def _safe_name(name: str) -> str:
@@ -64,6 +67,7 @@ def save_profile(name: str, state: dict, finite_rows: list[dict],
         "version": 1,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "texts": {k: str(state.get(k, "") or "") for k in TEXT_KEYS},
+        "settings": {k: bool(state.get(k, False)) for k in SETTING_KEYS},
         "fields": {
             k: bool(state.get(k, False)) if k == "f_systemlink_snow"
             else str(state.get(k, "") or "")
@@ -97,6 +101,7 @@ def load_profile(name: str) -> dict | None:
         return None
     data.setdefault("texts", {})
     data.setdefault("fields", {})
+    data.setdefault("settings", {})
     data["fields"].setdefault("f_systemlink_snow", False)
     data.setdefault("finite_licenses", [])
     data.setdefault("bundles", [])

@@ -130,6 +130,33 @@ def test_parsers():
           and top[0]["pct"] == 54,
           f"got {top[0]}")
 
+    # VLM usage: the value column must be read from the header, not position,
+    # or the trailing 'EA-15552' identifier gets plotted as the count.
+    vlm = dp.parse_vlm_usage(
+        "Quarter of Usage Qtr Date\tLabel - Total Clients\tUsage Type\t"
+        "Distinct Clients\tEA or Server selected\n"
+        "2021 Q1\t\tDisconnected_Usage\t645\tEA-15552\n"
+        "2021 Q2\t\tDisconnected_Usage\t726\tEA-15552\n")
+    check("vlm rows", len(vlm) == 2, f"got {len(vlm)}")
+    check("vlm period and total",
+          vlm.iloc[0]["period"] == "Q1 2021" and int(vlm.iloc[0]["total"]) == 645,
+          f"got {vlm.iloc[0].to_dict()}")
+    multi = dp.parse_vlm_usage(
+        "Qtr\tUsage Type\tDistinct Clients\n"
+        "2021 Q1\tDisconnected_Usage\t645\n"
+        "2021 Q1\tConnected_Usage\t100\n")
+    check("vlm sums usage types", int(multi.iloc[0]["total"]) == 745,
+          f"got {multi.iloc[0]['total']}")
+    monthly = dp.parse_vlm_usage(
+        "Date\tUsage Type\tDistinct Clients\n"
+        "2021-01-15\tDisconnected_Usage\t100\n"
+        "2021-02-15\tDisconnected_Usage\t110\n"
+        "2021-03-15\tDisconnected_Usage\t120\n")
+    check("vlm averages monthly snapshots into a quarter",
+          len(monthly) == 1 and int(monthly.iloc[0]["total"]) == 110,
+          f"got {monthly.to_dict('records')}")
+    check("vlm empty input", dp.parse_vlm_usage("").empty)
+
     # Date/phase math.
     start = dp.parse_date("02-JAN-2026")
     check("date parse", start == date(2026, 1, 2))
@@ -375,6 +402,15 @@ def test_github_pages_lite_security():
           "downloadCurrentPptx" in app_js
           and "repairPptxPackage" in app_js
           and "[Content_Types].xml" in app_js)
+    check("pages lite has the optional VLM usage graph",
+          'id="includeVlm" type="checkbox"' in index
+          and 'id="vlmText"' in index
+          and "parseVlm" in app_js
+          and "VLM Usage Trend" in app_js)
+    # A rising trend segment used to be drawn with a negative height, which is
+    # invalid OOXML and made PowerPoint scatter the line.
+    check("pages lite draws trend segments with a positive height",
+          "flipV: b.y < a.y" in app_js and "Math.abs(b.y - a.y)" in app_js)
     check("pages lite has profile import/export", "currentProfilePayload" in app_js)
     check("pages lite has batch deck generation", "downloadBatchPptx" in app_js)
     check("pages lite does not load browser OCR",

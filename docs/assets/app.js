@@ -92,6 +92,21 @@
       'TestStand\t2024\t49',
       'VeriStand\t2023\t72'
     ].join('\n'),
+    vlm: [
+      'Quarter of Usage Qtr Date\tLabel - Total Clients\tUsage Type\tDistinct Clients\tEA or Server selected',
+      '2024 Q1\t\tConnected_Usage\t412\tEA-15552',
+      '2024 Q1\t\tDisconnected_Usage\t645\tEA-15552',
+      '2024 Q2\t\tConnected_Usage\t468\tEA-15552',
+      '2024 Q2\t\tDisconnected_Usage\t726\tEA-15552',
+      '2024 Q3\t\tConnected_Usage\t531\tEA-15552',
+      '2024 Q3\t\tDisconnected_Usage\t824\tEA-15552',
+      '2024 Q4\t\tConnected_Usage\t604\tEA-15552',
+      '2024 Q4\t\tDisconnected_Usage\t882\tEA-15552',
+      '2025 Q1\t\tConnected_Usage\t659\tEA-15552',
+      '2025 Q1\t\tDisconnected_Usage\t917\tEA-15552',
+      '2025 Q2\t\tConnected_Usage\t712\tEA-15552',
+      '2025 Q2\t\tDisconnected_Usage\t968\tEA-15552'
+    ].join('\n'),
     finite: [
       '25\tNamed User\tLabVIEW Professional',
       '12\tConcurrent\tTestStand',
@@ -239,6 +254,119 @@
       if (!cells[0] || newer === null || existing === null) return null;
       return { period: cells[0], new: newer, existing, total: newer + existing };
     }).filter(Boolean);
+  }
+
+  // A cell that is only a number, unlike '2021 Q1' or 'EA-15552'.
+  const CLEAN_NUMBER = /^-?[\d,]+(\.\d+)?$/;
+
+  function vlmPeriod(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return null;
+    const q = text.match(/(\d{4})\D{0,4}Q([1-4])|Q([1-4])\D{0,4}(\d{4})/i);
+    if (q) return q[1] ? [Number(q[1]), Number(q[2])] : [Number(q[4]), Number(q[3])];
+    const iso = text.match(/(\d{4})-(\d{1,2})-\d{1,2}/);
+    if (iso) return [Number(iso[1]), Math.floor((Number(iso[2]) - 1) / 3) + 1];
+    const us = text.match(/(\d{1,2})\/\d{1,2}\/(\d{4})/);
+    if (us) return [Number(us[2]), Math.floor((Number(us[1]) - 1) / 3) + 1];
+    return null;
+  }
+
+  function pickValueColumn(header, dataRows) {
+    const width = dataRows.reduce((w, r) => Math.max(w, r.length), 0);
+    const threshold = Math.max(dataRows.length / 2, 1);
+    const numeric = [];
+    for (let i = 0; i < width; i += 1) {
+      const hits = dataRows.filter((r) => i < r.length && CLEAN_NUMBER.test(String(r[i]).trim())).length;
+      if (hits >= threshold) numeric.push(i);
+    }
+    if (!numeric.length) return null;
+    if (header) {
+      // 'Distinct Clients' must win over a 'Label - Total Clients' column.
+      const tiers = [['distinct'], ['count'], ['client', 'user', 'value', 'total']];
+      for (const keys of tiers) {
+        const found = header.findIndex((name, i) => numeric.includes(i)
+          && keys.some((k) => name.toLowerCase().includes(k)));
+        if (found !== -1) return found;
+      }
+    }
+    return numeric[numeric.length - 1];
+  }
+
+  // Usage-type values vary by export ('Disconnected_Usage', 'Connected usage',
+  // 'Online'), so match on the stem. 'disconnect' is tested first because
+  // 'disconnected' also contains 'connect'.
+  function vlmLane(usageType) {
+    const s = String(usageType || '').toLowerCase();
+    if (/disconnect|offline|unconnect|off-line/.test(s)) return 'disconnected';
+    if (/connect|online|on-line/.test(s)) return 'connected';
+    if (/\btotal\b|all users|all clients/.test(s)) return 'total';
+    return 'other';
+  }
+
+  function parseVlm(text) {
+    const data = rows(text);
+    if (!data.length) return [];
+    const header = data[0];
+    const hasHeader = !header.some((c) => vlmPeriod(c));
+    const dataRows = hasHeader ? data.slice(1) : data;
+    if (!dataRows.length) return [];
+
+    let periodI = null;
+    let typeI = null;
+    let valueI;
+    if (hasHeader) {
+      header.forEach((name, i) => {
+        const low = name.toLowerCase();
+        if (periodI === null && ['quarter', 'qtr', 'period', 'date'].some((k) => low.includes(k))) periodI = i;
+        else if (low.includes('type')) typeI = i;
+      });
+      valueI = pickValueColumn(header, dataRows);
+    } else {
+      periodI = header.findIndex((c) => vlmPeriod(c));
+      valueI = pickValueColumn(null, dataRows);
+    }
+    if (periodI === null || periodI === -1) periodI = 0;
+    if (valueI === null) return [];
+
+    const buckets = new Map();
+    let lastPeriod = null;
+    dataRows.forEach((cells) => {
+      if (valueI >= cells.length) return;
+      // Tableau blanks a repeated dimension value, so carry the last one down.
+      const period = vlmPeriod(periodI < cells.length ? cells[periodI] : '') || lastPeriod;
+      const value = toNumber(cells[valueI]);
+      if (!period || value === null) return;
+      lastPeriod = period;
+      const usageType = (typeI !== null && typeI < cells.length ? cells[typeI].trim() : '') || 'usage';
+      const key = `${period[0]}|${period[1]}`;
+      const bucket = buckets.get(key) || new Map();
+      bucket.set(usageType, (bucket.get(usageType) || []).concat(value));
+      buckets.set(key, bucket);
+    });
+
+    return Array.from(buckets.entries()).sort(([a], [b]) => {
+      const [ay, aq] = a.split('|').map(Number);
+      const [by, bq] = b.split('|').map(Number);
+      return ay - by || aq - bq;
+    }).map(([key, bucket]) => {
+      const [year, quarter] = key.split('|').map(Number);
+      const lane = { connected: 0, disconnected: 0, total: 0, other: 0 };
+      let hasExplicitTotal = false;
+      bucket.forEach((vals, usageType) => {
+        const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+        const key2 = vlmLane(usageType);
+        if (key2 === 'total') hasExplicitTotal = true;
+        lane[key2] += avg;
+      });
+      // An export that already carries a total row wins over re-adding the lanes.
+      const total = hasExplicitTotal ? lane.total : lane.connected + lane.disconnected + lane.other;
+      return {
+        period: `Q${quarter} ${year}`,
+        connected: Math.round(lane.connected),
+        disconnected: Math.round(lane.disconnected),
+        total: Math.round(total)
+      };
+    });
   }
 
   function computeStats(machine) {
@@ -904,21 +1032,73 @@
     return insights.sort((a, b) => a.p - b.p);
   }
 
-  function chartSvg(machine) {
-    if (!machine.length) return '<div class="empty">No machine-count data</div>';
+  function chartSvg(series, emptyText = 'No machine-count data', label = 'Total machines over time') {
+    if (!series.length) return `<div class="empty">${esc(emptyText)}</div>`;
     const width = 340, height = 205, padL = 34, padR = 8, padT = 8, padB = 20;
-    const totals = machine.map((r) => r.total);
-    const periods = machine.map((r) => r.period);
+    const totals = series.map((r) => r.total);
+    const periods = series.map((r) => r.period);
     let lo = Math.min(...totals), hi = Math.max(...totals);
     let span = hi - lo || 1;
     lo -= span * 0.08; hi += span * 0.08; span = hi - lo;
     const iw = width - padL - padR, ih = height - padT - padB;
-    const x = (i) => padL + iw * i / Math.max(machine.length - 1, 1);
+    const x = (i) => padL + iw * i / Math.max(series.length - 1, 1);
     const y = (v) => padT + ih * (1 - (v - lo) / span);
     const pts = totals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
     const peakI = totals.indexOf(Math.max(...totals));
     const grid = [0, .5, 1].map((f) => `<line x1="${padL}" y1="${(padT + ih * f).toFixed(1)}" x2="${width - padR}" y2="${(padT + ih * f).toFixed(1)}" stroke="#f0f0f0"/>`).join('');
-    return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="Total machines over time">${grid}<polyline points="${pts}" fill="none" stroke="#18af7c" stroke-width="2.5"/><circle cx="${x(peakI).toFixed(1)}" cy="${y(totals[peakI]).toFixed(1)}" r="5" fill="#18af7c" stroke="#fff" stroke-width="2"/><text x="${x(0).toFixed(0)}" y="${height - 5}" font-size="8" fill="#6e6e6e">${esc(periods[0])}</text><text x="${x(machine.length - 1).toFixed(0)}" y="${height - 5}" text-anchor="end" font-size="8" fill="#6e6e6e">${esc(periods[periods.length - 1])}</text></svg>`;
+    return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="${esc(label)}">${grid}<polyline points="${pts}" fill="none" stroke="#18af7c" stroke-width="2.5"/><circle cx="${x(peakI).toFixed(1)}" cy="${y(totals[peakI]).toFixed(1)}" r="5" fill="#18af7c" stroke="#fff" stroke-width="2"/><text x="${x(0).toFixed(0)}" y="${height - 5}" font-size="8" fill="#6e6e6e">${esc(periods[0])}</text><text x="${x(series.length - 1).toFixed(0)}" y="${height - 5}" text-anchor="end" font-size="8" fill="#6e6e6e">${esc(periods[periods.length - 1])}</text></svg>`;
+  }
+
+  // The three VLM lanes, in draw/legend order. Total sits on top of the two
+  // lanes it is made of, so it gets the heaviest stroke.
+  const VLM_LANES = [
+    { key: 'total', label: 'Total', color: '#013324', ppt: '013324', width: 2.4 },
+    { key: 'connected', label: 'Connected', color: '#18af7c', ppt: '18AF7C', width: 2 },
+    { key: 'disconnected', label: 'Disconnected', color: '#c88a1e', ppt: 'C88A1E', width: 2 }
+  ];
+
+  function activeVlmLanes(series) {
+    const active = VLM_LANES.filter((lane) => series.some((r) => Number(r[lane.key]) > 0));
+    return active.length ? active : [VLM_LANES[0]];
+  }
+
+  function vlmChartSvg(series, emptyText = 'No VLM usage data') {
+    if (!series.length) return `<div class="empty">${esc(emptyText)}</div>`;
+    const lanes = activeVlmLanes(series);
+    // The viewBox matches the band's proportions on the .pptx (8.14 x 0.78in),
+    // so the miniature preview and the deck read the same.
+    const width = 760, height = 73, padL = 34, padR = 6, padT = 5, padB = 14;
+    const values = lanes.reduce((all, lane) => all.concat(series.map((r) => Number(r[lane.key]) || 0)), []);
+    const loLabel = Math.min(...values), hiLabel = Math.max(...values);
+    const span0 = hiLabel - loLabel || 1;
+    const lo = loLabel - span0 * 0.12, hi = hiLabel + span0 * 0.12;
+    const span = hi - lo || 1;
+    const iw = width - padL - padR, ih = height - padT - padB;
+    const x = (i) => padL + iw * i / Math.max(series.length - 1, 1);
+    const y = (v) => padT + ih * (1 - (v - lo) / span);
+    const grid = [0, .5, 1].map((f) => `<line x1="${padL}" y1="${(padT + ih * f).toFixed(1)}" x2="${width - padR}" y2="${(padT + ih * f).toFixed(1)}" stroke="#f0f0f0"/>`).join('');
+    const yAxis = `<text x="${padL - 5}" y="${(padT + 3.5).toFixed(1)}" text-anchor="end" font-size="8" fill="#6e6e6e">${esc(fmt(hiLabel))}</text>`
+      + `<text x="${padL - 5}" y="${(padT + ih).toFixed(1)}" text-anchor="end" font-size="8" fill="#6e6e6e">${esc(fmt(loLabel))}</text>`;
+    const lines = lanes.map((lane) => {
+      const pts = series.map((r, i) => `${x(i).toFixed(1)},${y(Number(r[lane.key]) || 0).toFixed(1)}`).join(' ');
+      const dots = series.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(Number(r[lane.key]) || 0).toFixed(1)}" r="1.8" fill="${lane.color}"/>`).join('');
+      return `<polyline points="${pts}" fill="none" stroke="${lane.color}" stroke-width="${lane.width}" stroke-linejoin="round"/>${dots}`;
+    }).join('');
+    const everyLabel = series.length <= 14;
+    const xLabels = series.map((r, i) => {
+      if (!everyLabel && i !== 0 && i !== series.length - 1) return '';
+      const anchor = i === 0 ? 'start' : i === series.length - 1 ? 'end' : 'middle';
+      return `<text x="${x(i).toFixed(1)}" y="${height - 3}" text-anchor="${anchor}" font-size="8.5" fill="#6e6e6e">${esc(r.period)}</text>`;
+    }).join('');
+    return `<svg viewBox="0 0 ${width} ${height}" class="vlm-svg" role="img" aria-label="VLM connected, disconnected and total clients over time">${grid}${yAxis}${lines}${xLabels}</svg>`;
+  }
+
+  // The legend lives in the card's title row, matching where it sits on the
+  // .pptx, so the short band keeps its full height for the plot.
+  function vlmCard(series) {
+    const keys = (series.length ? activeVlmLanes(series) : [])
+      .map((lane) => `<span class="vlm-key"><i style="background:${lane.color}"></i>${esc(lane.label)}</span>`).join('');
+    return `<div class="card vlm-card"><div class="card-title vlm-title"><span>VLM Usage Trend</span><span class="vlm-legend">${keys}</span></div><div class="card-body">${vlmChartSvg(series)}</div></div>`;
   }
 
   function card(title, body, extra = '') {
@@ -940,7 +1120,7 @@
     const verRows = data.versions_top5.map((r) => `<tr><td>${esc(r.product)}</td><td>${fmt(r.product_total ?? r.users)}</td><td>${esc(r.version)}</td><td class="qty">${r.pct}%</td></tr>`).join('');
     return `
       <div class="slide-header"><div><div class="slide-label">Enterprise Agreement</div><div class="slide-title">${esc(data.service_id || 'EA')} · ${esc(data.customer || 'Customer')}</div></div><div class="updated">Updated ${esc(data.updated_date)}</div></div>
-      <div class="slide-grid">
+      <div class="slide-grid${data.vlm.show ? ' with-vlm' : ''}">
         <div class="col left">
           ${card('Contract Details', [['EA End Date', data.ea_end_date], ['Term Duration', data.ep_term], ['Contract Scope', data.contract_scope], ['Phase', data.phase]].map(([k, v]) => `<div class="krow"><span class="key">${esc(k)}</span><span class="value">${esc(v || '—')}</span></div>`).join(''), 'contract-card')}
           ${card('Bundle Information', bundles)}
@@ -956,11 +1136,13 @@
           ${card('Training Credit Usage', `<div class="stats3"><div><div class="lbl">Purchased</div><div class="med">${fmt(data.credits.purchased)}</div></div><div><div class="lbl">Used</div><div class="med">${fmt(data.credits.used)}</div></div><div><div class="lbl">Utilized</div><div class="med">${data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`}</div></div></div>`)}
           ${card('Technical Support', `<b>${esc(data.support.tier || '—')}</b><span class="scope">${esc(data.support.scope || '')}</span>${data.support.systemlink_snow ? '<b class="snow">SystemLink Support (SNOW)</b>' : ''}`, 'support-card')}
         </div>
+        ${data.vlm.show ? vlmCard(data.vlm.df) : ''}
       </div>`;
   }
 
   function buildData() {
     const machine = parseMachine($('machineText').value);
+    const showVlm = $('includeVlm').checked;
     const locations = parseLocations($('locationsText').value, $('avoidLocationDoubleCount').checked);
     const versions = parseVersions($('versionsText').value);
     const purchased = toNumber($('creditsPurchased').value);
@@ -980,6 +1162,7 @@
       bundles: $('bundleText').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean),
       finite_licenses: parseFinite($('finiteText').value),
       machine: { df: machine, stats: computeStats(machine) },
+      vlm: { df: showVlm ? parseVlm($('vlmText').value) : [], show: showVlm },
       locations_top5: topLocations(locations),
       versions_top5: topVersions(versions),
       credits: { purchased: $('creditsPurchased').value.trim() || '—', used: $('creditsUsed').value.trim() || '—', pct_used: pctUsed },
@@ -995,6 +1178,7 @@
     if (!data.locations_top5.length) items.push('Locations did not parse; Top Site Locations will be empty.');
     if (!data.versions_top5.length) items.push('Usage Versions did not parse; Version Usage will be empty.');
     if (data.credits.pct_used === '—') items.push('Enter purchased and used credits to calculate utilization.');
+    if (data.vlm.show && !data.vlm.df.length) items.push('VLM usage is switched on but the pasted table did not parse; the VLM graph will be empty.');
     return items;
   }
 
@@ -1411,6 +1595,7 @@
 
   function render() {
     const data = buildData();
+    $('vlmText').closest('.vlm-block').classList.toggle('on', data.vlm.show);
     $('warnings').innerHTML = warnings(data).map((w) => `<div class="warning">${esc(w)}</div>`).join('');
     $('slidePreview').innerHTML = renderSlide(data);
     const insightItems = generateInsights(data);
@@ -1433,6 +1618,7 @@
     $('machineText').value = EXAMPLES.machine;
     $('locationsText').value = EXAMPLES.locations;
     $('versionsText').value = EXAMPLES.versions;
+    $('vlmText').value = EXAMPLES.vlm;
     setFiniteText(EXAMPLES.finite, false);
     setBundleText(EXAMPLES.bundles, false);
     $('serviceId').value = 'EA-15725';
@@ -1505,7 +1691,8 @@
       texts: {
         machine_text: $('machineText').value,
         locations_text: $('locationsText').value,
-        versions_text: $('versionsText').value
+        versions_text: $('versionsText').value,
+        vlm_text: $('vlmText').value
       },
       fields: {
         f_service_id: $('serviceId').value,
@@ -1524,7 +1711,8 @@
         f_flex_used: $('creditsUsed').value
       },
       settings: {
-        avoid_location_double_count: $('avoidLocationDoubleCount').checked
+        avoid_location_double_count: $('avoidLocationDoubleCount').checked,
+        include_vlm: $('includeVlm').checked
       },
       finite_licenses: parseFinite($('finiteText').value),
       bundles: $('bundleText').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
@@ -1535,6 +1723,7 @@
     const texts = payload.texts || {};
     const fields = payload.fields || {};
     const machine = parseMachine(texts.machine_text || '');
+    const showVlm = !!(payload.settings && payload.settings.include_vlm);
     const locations = parseLocations(texts.locations_text || '', payload.settings ? payload.settings.avoid_location_double_count !== false : true);
     const versions = parseVersions(texts.versions_text || '');
     const purchased = toNumber(fields.f_flex_purchased || '');
@@ -1554,6 +1743,7 @@
       bundles: Array.isArray(payload.bundles) ? payload.bundles : [],
       finite_licenses: Array.isArray(payload.finite_licenses) ? payload.finite_licenses : [],
       machine: { df: machine, stats: computeStats(machine) },
+      vlm: { df: showVlm ? parseVlm(texts.vlm_text || '') : [], show: showVlm },
       locations_top5: topLocations(locations),
       versions_top5: topVersions(versions),
       credits: { purchased: fields.f_flex_purchased || '—', used: fields.f_flex_used || '—', pct_used: pctUsed },
@@ -1567,6 +1757,7 @@
     $('machineText').value = texts.machine_text || '';
     $('locationsText').value = texts.locations_text || '';
     $('versionsText').value = texts.versions_text || '';
+    $('vlmText').value = texts.vlm_text || '';
     $('serviceId').value = fields.f_service_id || '';
     $('customer').value = fields.f_customer || '';
     $('startDate').value = fields.f_start_date || '';
@@ -1581,6 +1772,7 @@
     $('creditsPurchased').value = fields.f_flex_purchased || '';
     $('creditsUsed').value = fields.f_flex_used || '';
     $('avoidLocationDoubleCount').checked = payload.settings ? payload.settings.avoid_location_double_count !== false : true;
+    $('includeVlm').checked = !!(payload.settings && payload.settings.include_vlm);
     setFiniteText((payload.finite_licenses || []).map((r) => `${r.count || 0}\t${r.license_type || ''}\t${r.license_name || ''}`).join('\n'), false);
     setBundleText((payload.bundles || []).join('\n'), false);
     $('profileName').value = suggestProfileName();
@@ -1800,10 +1992,10 @@
     }
   }
 
-  function addTrend(slide, pptx, machine, area) {
-    const data = machine || [];
+  function addTrend(slide, pptx, series, area, emptyText = 'No machine-count data') {
+    const data = series || [];
     if (!data.length) {
-      addText(slide, 'No machine-count data', { x: area.x, y: area.y + 0.2, w: area.w, h: 0.3, fontSize: 9, color: PPT.gray, align: 'center' });
+      addText(slide, emptyText, { x: area.x, y: area.y + 0.2, w: area.w, h: 0.3, fontSize: 9, color: PPT.gray, align: 'center' });
       return;
     }
     const shapes = shapeNames(pptx);
@@ -1826,7 +2018,12 @@
     for (let i = 1; i < data.length; i += 1) {
       const a = point(i - 1);
       const b = point(i);
-      slide.addShape(shapes.line, { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y, line: { color: PPT.accent, width: 1.8 } });
+      // A shape extent must be positive; a rising segment is drawn top-down
+      // and flipped, since PowerPoint renders a negative height unpredictably.
+      slide.addShape(shapes.line, {
+        x: a.x, y: Math.min(a.y, b.y), w: b.x - a.x, h: Math.abs(b.y - a.y),
+        flipV: b.y < a.y, line: { color: PPT.accent, width: 1.8 }
+      });
     }
     const peakI = values.indexOf(Math.max(...values));
     const p = point(peakI);
@@ -1835,20 +2032,83 @@
     addText(slide, data[data.length - 1].period, { x: plot.x + plot.w - 1.4, y: area.y + area.h - 0.22, w: 1.4, h: 0.16, fontSize: 6.5, color: PPT.gray, align: 'right' });
   }
 
+  function addVlmTrend(slide, pptx, series, area, legend) {
+    const data = series || [];
+    if (!data.length) {
+      addText(slide, 'No VLM usage data', { x: area.x, y: area.y + 0.2, w: area.w, h: 0.3, fontSize: 9, color: PPT.gray, align: 'center' });
+      return;
+    }
+    const shapes = shapeNames(pptx);
+    const lanes = activeVlmLanes(data);
+    if (legend) {
+      // The legend sits in the card's title row so the plot keeps its height.
+      let lx = legend.right;
+      lanes.slice().reverse().forEach((lane) => {
+        const textW = 0.10 + lane.label.length * 0.048;
+        lx -= textW;
+        addText(slide, lane.label, { x: lx, y: legend.y, w: textW, h: 0.16, fontSize: 7, color: PPT.gray });
+        lx -= 0.20;
+        slide.addShape(shapes.line, { x: lx, y: legend.y + 0.07, w: 0.16, h: 0, line: { color: lane.ppt, width: lane.width } });
+        lx -= 0.07;
+      });
+    }
+    const values = lanes.reduce((all, lane) => all.concat(data.map((r) => Number(r[lane.key]) || 0)), []);
+    const loLabel = Math.min(...values);
+    const hiLabel = Math.max(...values);
+    const span0 = hiLabel - loLabel || 1;
+    const lo = loLabel - span0 * 0.12;
+    const hi = hiLabel + span0 * 0.12;
+    const span = hi - lo || 1;
+    const plot = { x: area.x + 0.40, y: area.y + 0.06, w: area.w - 0.50, h: area.h - 0.30 };
+    [0, 0.5, 1].forEach((f) => {
+      slide.addShape(shapes.line, { x: plot.x, y: plot.y + plot.h * f, w: plot.w, h: 0, line: { color: 'EEF1EF', width: 0.5 } });
+    });
+    addText(slide, fmt(hiLabel), { x: area.x, y: plot.y - 0.04, w: 0.36, h: 0.14, fontSize: 6, color: PPT.gray, align: 'right' });
+    addText(slide, fmt(loLabel), { x: area.x, y: plot.y + plot.h - 0.09, w: 0.36, h: 0.14, fontSize: 6, color: PPT.gray, align: 'right' });
+    const px = (i) => plot.x + plot.w * i / Math.max(data.length - 1, 1);
+    const py = (v) => plot.y + plot.h * (1 - (v - lo) / span);
+    lanes.forEach((lane) => {
+      for (let i = 1; i < data.length; i += 1) {
+        const ay = py(Number(data[i - 1][lane.key]) || 0);
+        const by = py(Number(data[i][lane.key]) || 0);
+        // A shape extent must be positive; a rising segment is drawn top-down
+        // and flipped, since PowerPoint renders a negative height unpredictably.
+        slide.addShape(shapes.line, {
+          x: px(i - 1), y: Math.min(ay, by), w: px(i) - px(i - 1), h: Math.abs(by - ay),
+          flipV: by < ay, line: { color: lane.ppt, width: lane.width * 0.75 }
+        });
+      }
+    });
+    const labelW = plot.w / Math.max(data.length - 1, 1);
+    const everyLabel = data.length <= 14 && labelW >= 0.42;
+    const labelY = area.y + area.h - 0.15;
+    data.forEach((row, i) => {
+      if (!everyLabel && i !== 0 && i !== data.length - 1) return;
+      const align = i === 0 ? 'left' : i === data.length - 1 ? 'right' : 'center';
+      const x = i === 0 ? px(0) : i === data.length - 1 ? px(i) - labelW : px(i) - labelW / 2;
+      addText(slide, row.period, { x, y: labelY, w: labelW, h: 0.15, fontSize: 6.5, color: PPT.gray, align });
+    });
+  }
+
   function addStatsCard(slide, pptx, area, stats) {
+    // The card is squeezed when the optional VLM band is on the slide.
+    const tight = area.h < 2.0;
+    const m = tight
+      ? { numY: 0.05, numH: 0.28, numSize: 15, lblY: 0.34, lblH: 0.15, lblSize: 6.2, perY: 0.49, perH: 0.15, perSize: 5.8, stripLblY: 0.75, stripLblH: 0.20, stripLblSize: 6.6, pctY: 0.72, pctH: 0.26, pctSize: 12 }
+      : { numY: 0.13, numH: 0.36, numSize: 24, lblY: 0.55, lblH: 0.20, lblSize: 7.8, perY: 0.76, perH: 0.20, perSize: 7, stripLblY: 0.77, stripLblH: 0.25, stripLblSize: 8.7, pctY: 0.72, pctH: 0.32, pctSize: 18 };
     const boxW = (area.w - 0.12) / 2;
     [
       [area.x, stats.max_total, 'Peak machines', stats.max_period, PPT.accent, PPT.accent],
       [area.x + boxW + 0.12, stats.min_total, 'Min machines', stats.min_period, PPT.dark, PPT.border]
     ].forEach(([x, num, label, period, color, line]) => {
       addRect(slide, pptx, x, area.y, boxW, area.h * 0.62, PPT.white, line, 1);
-      addText(slide, fmt(num), { x, y: area.y + 0.13, w: boxW, h: 0.36, fontFace: 'Georgia', fontSize: 24, bold: true, color, align: 'center' });
-      addText(slide, label, { x, y: area.y + 0.55, w: boxW, h: 0.2, fontSize: 7.8, color: PPT.gray, align: 'center' });
-      addText(slide, period, { x, y: area.y + 0.76, w: boxW, h: 0.2, fontSize: 7, color: PPT.dark, align: 'center' });
+      addText(slide, fmt(num), { x, y: area.y + m.numY, w: boxW, h: m.numH, fontFace: 'Georgia', fontSize: m.numSize, bold: true, color, align: 'center' });
+      addText(slide, label, { x, y: area.y + m.lblY, w: boxW, h: m.lblH, fontSize: m.lblSize, color: PPT.gray, align: 'center' });
+      addText(slide, period, { x, y: area.y + m.perY, w: boxW, h: m.perH, fontSize: m.perSize, color: PPT.dark, align: 'center' });
     });
     addRect(slide, pptx, area.x, area.y + area.h * 0.7, area.w, area.h * 0.3, PPT.tint, null);
-    addText(slide, 'Avg quarterly increase', { x: area.x + 0.12, y: area.y + area.h * 0.77, w: area.w * 0.55, h: 0.25, fontSize: 8.7, color: PPT.dark, valign: 'mid' });
-    addText(slide, `${stats.avg_pct_change >= 0 ? '+' : ''}${stats.avg_pct_change.toFixed(1)}%`, { x: area.x + area.w * 0.58, y: area.y + area.h * 0.72, w: area.w * 0.36, h: 0.32, fontFace: 'Georgia', fontSize: 18, bold: true, color: PPT.accent, align: 'right' });
+    addText(slide, 'Avg quarterly increase', { x: area.x + 0.12, y: area.y + area.h * m.stripLblY, w: area.w * 0.55, h: m.stripLblH, fontSize: m.stripLblSize, color: PPT.dark, valign: 'mid' });
+    addText(slide, `${stats.avg_pct_change >= 0 ? '+' : ''}${stats.avg_pct_change.toFixed(1)}%`, { x: area.x + area.w * 0.58, y: area.y + area.h * m.pctY, w: area.w * 0.36, h: m.pctH, fontFace: 'Georgia', fontSize: m.pctSize, bold: true, color: PPT.accent, align: 'right' });
   }
 
   function addEaSlide(pptx, data) {
@@ -1889,16 +2149,26 @@
       addText(slide, 'No license or bundle data provided', { x: area.x, y: area.y + 0.3, w: area.w, h: 0.3, fontSize: 8.5, color: PPT.gray, align: 'center' });
     }
 
+    // The optional VLM graph is a wide band under the centre and right columns.
+    // The four cards above it shrink to free the space; Software Usage Trend,
+    // Top Site Locations and the whole left column keep the size they have
+    // without the band.
+    const showVlm = data.vlm.show;
+    const bandH = 1.30;
+    const centerBottom = top + 6.2 - (showVlm ? bandH + 0.14 : 0);
     area = addCard(slide, pptx, 'Software Usage Trend', centerX, top, colW, 3.4);
     addTrend(slide, pptx, data.machine.df, area);
-    area = addCard(slide, pptx, 'Software Usage Data', centerX, top + 3.52, colW, 2.68);
+    area = addCard(slide, pptx, 'Software Usage Data', centerX, top + 3.52, colW, centerBottom - top - 3.52);
     addStatsCard(slide, pptx, area, data.machine.stats);
 
     // Locations/version cards split their space by their actual row counts.
     const nLoc = Math.max(data.locations_top5.length, 1);
     const nVer = Math.max(data.versions_top5.length, 1);
-    const tablesH = 3.8;
-    const hLoc = tablesH * (nLoc + 1) / (nLoc + nVer + 2);
+    const trainingH = showVlm ? 0.74 : 1.18;
+    const supportH = showVlm ? 0.56 : 0.86;
+    const tablesH = (centerBottom - top) - trainingH - supportH - 0.36;
+    // Locations keeps its unsqueezed height, so Version Usage absorbs the band.
+    const hLoc = Math.min(3.8 * (nLoc + 1) / (nLoc + nVer + 2), tablesH - 0.55);
     area = addCard(slide, pptx, 'Top Site Locations', rightX, top, colW, hLoc);
     addSimpleTable(slide, pptx, ['COUNTRY', 'STATE', 'CITY', 'COUNT'], data.locations_top5.map((r) => [
       { text: r.country || '' },
@@ -1913,21 +2183,33 @@
       { text: r.version || '' },
       { text: `${r.pct || 0}%`, bold: true, color: PPT.accent, align: 'right' }
     ]), area, [0.38, 0.19, 0.27, 0.16], { fitAll: true, minFontSize: 5.8 });
-    area = addCard(slide, pptx, 'Training Credit Usage', rightX, top + 4.04, colW, 1.18);
+    const trainingY = top + tablesH + 0.24;
+    area = addCard(slide, pptx, 'Training Credit Usage', rightX, trainingY, colW, trainingH);
+    const creditSize = showVlm ? 12.5 : 16;
     [['Purchased', data.credits.purchased, PPT.dark], ['Used', data.credits.used, PPT.dark], ['Utilized', data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`, PPT.accent]].forEach(([label, value, color], i) => {
       const x = area.x + area.w / 3 * i;
-      addText(slide, label, { x, y: area.y, w: area.w / 3, h: 0.2, fontSize: 7.2, color: PPT.gray, align: 'center' });
-      addText(slide, fmt(value), { x, y: area.y + 0.27, w: area.w / 3, h: 0.32, fontFace: 'Georgia', fontSize: 16, bold: true, color, align: 'center' });
+      addText(slide, label, { x, y: area.y, w: area.w / 3, h: 0.2, fontSize: showVlm ? 6.4 : 7.2, color: PPT.gray, align: 'center' });
+      addText(slide, fmt(value), { x, y: area.y + (showVlm ? 0.19 : 0.27), w: area.w / 3, h: showVlm ? 0.26 : 0.32, fontFace: 'Georgia', fontSize: creditSize, bold: true, color, align: 'center' });
     });
-    addRect(slide, pptx, rightX, top + 5.34, colW, 0.86, PPT.dark, PPT.dark);
-    addText(slide, 'TECHNICAL SUPPORT', { x: rightX + 0.14, y: top + 5.44, w: colW - 0.28, h: 0.2, fontSize: 7.5, bold: true, color: PPT.muted });
+    const supportY = trainingY + trainingH + 0.12;
+    addRect(slide, pptx, rightX, supportY, colW, supportH, PPT.dark, PPT.dark);
+    addText(slide, 'TECHNICAL SUPPORT', { x: rightX + 0.14, y: supportY + (showVlm ? 0.06 : 0.10), w: colW - 0.28, h: 0.2, fontSize: showVlm ? 6.4 : 7.5, bold: true, color: PPT.muted });
     const snow = !!data.support.systemlink_snow;
+    const tierSize = showVlm ? 8.5 : 11;
+    const scopeSize = showVlm ? 7 : 9;
     const supportRuns = [
-      { text: data.support.tier || '—', options: { fontSize: 11, bold: true, color: PPT.white, breakLine: snow && !data.support.scope } }
+      { text: data.support.tier || '—', options: { fontSize: tierSize, bold: true, color: PPT.white, breakLine: snow && !data.support.scope } }
     ];
-    if (data.support.scope) supportRuns.push({ text: `   ${data.support.scope}`, options: { fontSize: 9, color: PPT.muted, breakLine: snow } });
-    if (snow) supportRuns.push({ text: 'SystemLink Support (SNOW)', options: { fontSize: 11, bold: true, color: PPT.white } });
-    slide.addText(supportRuns, { x: rightX + 0.14, y: top + 5.64, w: colW - 0.28, h: 0.5, fontFace: 'Calibri', valign: 'mid' });
+    if (data.support.scope) supportRuns.push({ text: `   ${data.support.scope}`, options: { fontSize: scopeSize, color: PPT.muted, breakLine: snow } });
+    if (snow) supportRuns.push({ text: 'SystemLink Support (SNOW)', options: { fontSize: tierSize, bold: true, color: PPT.white } });
+    slide.addText(supportRuns, { x: rightX + 0.14, y: supportY + (showVlm ? 0.22 : 0.30), w: colW - 0.28, h: showVlm ? 0.30 : 0.5, fontFace: 'Calibri', valign: 'mid' });
+
+    if (showVlm) {
+      const bandY = centerBottom + 0.14;
+      const bandW = colW * 2 + gap;
+      area = addCard(slide, pptx, 'VLM Usage Trend', centerX, bandY, bandW, bandH);
+      addVlmTrend(slide, pptx, data.vlm.df, area, { y: bandY + 0.09, right: centerX + bandW - 0.14 });
+    }
   }
 
   function addInsightsSlide(pptx, data, insights) {

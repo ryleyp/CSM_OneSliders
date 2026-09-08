@@ -6,8 +6,9 @@ visual design:
   - full-width dark-green header band (EA number + customer, "Updated <date>")
   - three columns of white rounded "cards" with thin gray borders
   - LEFT:   Contract Details, Bundle Information, NI SW Licenses (finite qty)
-  - CENTER: Software Usage Trend (native line chart), Software Usage Data
-            (peak/min stat callouts + avg-increase strip)
+  - CENTER: Software Usage Trend (native line chart), an optional VLM Usage
+            Trend chart, Software Usage Data (peak/min stat callouts +
+            avg-increase strip)
   - RIGHT:  Top Site Locations, Version Usage, Training Credit Usage,
             Technical Support (solid dark-green card)
 
@@ -392,12 +393,20 @@ def _finite_card(slide, x, y, w, h, data):
 # CENTER column cards
 # --------------------------------------------------------------------------- #
 def _trend_card(slide, x, y, w, h, data):
-    ix, iy, iw, ih = _card(slide, x, y, w, h, "Software Usage Trend")
-    machine = data.get("machine", {})
-    df = machine.get("df")
+    _line_chart_card(slide, x, y, w, h, "Software Usage Trend",
+                     data.get("machine", {}).get("df"), "No machine-count data")
+
+
+def _vlm_trend_card(slide, x, y, w, h, data):
+    _line_chart_card(slide, x, y, w, h, "VLM Usage Trend",
+                     data.get("vlm", {}).get("df"), "No VLM usage data")
+
+
+def _line_chart_card(slide, x, y, w, h, title, df, empty_text):
+    ix, iy, iw, ih = _card(slide, x, y, w, h, title)
     if df is None or getattr(df, "empty", True):
         nb = slide.shapes.add_textbox(ix, iy, iw, Inches(0.3))
-        _set_text(nb, "No machine-count data", size=9, color=GRAY_TEXT)
+        _set_text(nb, empty_text, size=9, color=GRAY_TEXT)
         return
 
     periods = [str(p) for p in df["period"].tolist()]
@@ -825,12 +834,18 @@ def _add_ea_slide(prs, data: dict) -> None:
                                "Licenses & Bundles")
         _empty_note(slide, ix, iy, iw, ih, "No license or bundle data provided")
 
-    # --- CENTER column ---
+    # --- CENTER column (the optional VLM graph splits the trend space) ---
     y = top
-    hc1 = Inches(3.4)
-    _trend_card(slide, center_x, y, col_w, hc1, data)
+    if data.get("vlm", {}).get("show"):
+        hc1 = Inches(2.1)
+        _trend_card(slide, center_x, y, col_w, hc1, data)
+        y = Emu(int(y) + int(hc1) + int(card_gap))
+        _vlm_trend_card(slide, center_x, y, col_w, hc1, data)
+    else:
+        hc1 = Inches(3.4)
+        _trend_card(slide, center_x, y, col_w, hc1, data)
     y = Emu(int(y) + int(hc1) + int(card_gap))
-    hc2 = Emu(int(col_h) - int(hc1) - int(card_gap))
+    hc2 = Emu(int(top) + int(col_h) - int(y))
     _usage_data_card(slide, center_x, y, col_w, hc2, data)
 
     # --- RIGHT column (locations/version split by their actual row counts) ---

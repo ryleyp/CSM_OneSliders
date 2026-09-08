@@ -60,6 +60,10 @@ def _is_number(value) -> bool:
     return _to_number(value) is not None
 
 
+# A cell that is only a number, unlike '2021 Q1' or 'EA-15552'.
+_CLEAN_NUMBER_RE = re.compile(r"-?[\d,]+(?:\.\d+)?")
+
+
 def _split_rows(text: str) -> list[list[str]]:
     """Split a pasted block into rows of cells.
 
@@ -571,6 +575,137 @@ def top_versions(df: pd.DataFrame, n: int = 5) -> list[dict]:
             }
         )
     return results
+
+
+# --------------------------------------------------------------------------- #
+# 4. VLM usage (optional)
+# --------------------------------------------------------------------------- #
+_QUARTER_RE = re.compile(r"(\d{4})\D{0,4}Q([1-4])|Q([1-4])\D{0,4}(\d{4})",
+                         re.IGNORECASE)
+_ISO_DATE_RE = re.compile(r"(\d{4})-(\d{1,2})-\d{1,2}")
+_US_DATE_RE = re.compile(r"(\d{1,2})/\d{1,2}/(\d{4})")
+
+
+def _vlm_period(text) -> tuple[int, int] | None:
+    """Read (year, quarter) from a period cell: '2021 Q1', 'Q1 2021', a date."""
+    s = str(text or "").strip()
+    if not s:
+        return None
+    m = _QUARTER_RE.search(s)
+    if m:
+        if m.group(1):
+            return int(m.group(1)), int(m.group(2))
+        return int(m.group(4)), int(m.group(3))
+    m = _ISO_DATE_RE.search(s)
+    if m:
+        return int(m.group(1)), (int(m.group(2)) - 1) // 3 + 1
+    m = _US_DATE_RE.search(s)
+    if m:
+        return int(m.group(2)), (int(m.group(1)) - 1) // 3 + 1
+    return None
+
+
+def _numeric_columns(data_rows: list[list[str]]) -> list[int]:
+    """Column indexes that hold a bare number in most rows.
+
+    Bare, not merely number-ish: an identifier like 'EA-15552' must not read as
+    the value column just because a number can be dug out of it.
+    """
+    width = max((len(r) for r in data_rows), default=0)
+    threshold = max(len(data_rows) / 2, 1)
+    return [
+        i for i in range(width)
+        if sum(1 for r in data_rows
+               if i < len(r) and _CLEAN_NUMBER_RE.fullmatch(r[i].strip()))
+        >= threshold
+    ]
+
+
+def _pick_value_column(header: list[str] | None,
+                       data_rows: list[list[str]]) -> int | None:
+    """Choose the count column, preferring header wording over position."""
+    numeric = _numeric_columns(data_rows)
+    if not numeric:
+        return None
+    if header:
+        # 'Distinct Clients' must win over a 'Label - Total Clients' column.
+        for keywords in (("distinct",), ("count",),
+                         ("client", "user", "value", "total")):
+            for i, name in enumerate(header):
+                low = name.lower()
+                if i in numeric and any(k in low for k in keywords):
+                    return i
+    return numeric[-1]
+
+
+def parse_vlm_usage(text: str) -> pd.DataFrame:
+    """Parse a VLM usage export into quarterly period / total client counts.
+
+    Expects a long/tidy export, one row per quarter x usage type:
+
+        Quarter of Usage Qtr Date | Label | Usage Type | Distinct Clients | EA
+        2021 Q1                   |       | Disconnected_Usage | 645 | EA-15552
+
+    Repeated rows for one quarter and usage type are averaged, since they are
+    recurring snapshots rather than additive counts; the usage types are then
+    summed into that quarter's total. Returns columns: period, total.
+    """
+    rows = _split_rows(text)
+    if not rows:
+        return pd.DataFrame(columns=["period", "total"])
+
+    header = rows[0]
+    has_header = not any(_vlm_period(c) for c in header)
+    data_rows = rows[1:] if has_header else rows
+    if not data_rows:
+        return pd.DataFrame(columns=["period", "total"])
+
+    period_i: int | None = None
+    type_i: int | None = None
+    if has_header:
+        for i, name in enumerate(header):
+            low = name.lower()
+            if period_i is None and any(
+                    k in low for k in ("quarter", "qtr", "period", "date")):
+                period_i = i
+            elif "type" in low:
+                type_i = i
+        value_i = _pick_value_column(header, data_rows)
+    else:
+        period_i = next((i for i, c in enumerate(header) if _vlm_period(c)), 0)
+        value_i = _pick_value_column(None, data_rows)
+    if period_i is None:
+        period_i = 0
+    if value_i is None:
+        return pd.DataFrame(columns=["period", "total"])
+
+    # (year, quarter) -> usage type -> the snapshots seen for it.
+    buckets: dict[tuple[int, int], dict[str, list[float]]] = {}
+    last_period: tuple[int, int] | None = None
+    for cells in data_rows:
+        if value_i >= len(cells):
+            continue
+        raw = cells[period_i] if period_i < len(cells) else ""
+        # Tableau blanks a repeated dimension value, so carry the last one down.
+        period = _vlm_period(raw) or last_period
+        value = _to_number(cells[value_i])
+        if period is None or value is None:
+            continue
+        last_period = period
+        usage_type = ""
+        if type_i is not None and type_i < len(cells):
+            usage_type = cells[type_i].strip()
+        buckets.setdefault(period, {}).setdefault(
+            usage_type or "usage", []).append(value)
+
+    records = [
+        {
+            "period": f"Q{quarter} {year}",
+            "total": round(sum(sum(v) / len(v) for v in types.values())),
+        }
+        for (year, quarter), types in sorted(buckets.items())
+    ]
+    return pd.DataFrame(records, columns=["period", "total"])
 
 
 # --------------------------------------------------------------------------- #
