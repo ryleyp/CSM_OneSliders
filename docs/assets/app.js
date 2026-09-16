@@ -1119,38 +1119,6 @@
     return insights.sort((a, b) => a.p - b.p);
   }
 
-  function chartSvg(series, emptyText = 'No machine-count data', label = 'Total machines over time') {
-    if (!series.length) return `<div class="empty">${esc(emptyText)}</div>`;
-    const width = 340, height = 205, padL = 36, padR = 8, padT = 8, padB = 20;
-    const totals = series.map((r) => r.total);
-    const scale = niceScale(totals, 4);
-    const iw = width - padL - padR, ih = height - padT - padB;
-    const x = (i) => padL + iw * i / Math.max(series.length - 1, 1);
-    const y = (v) => padT + ih * (1 - (v - scale.lo) / scale.span);
-    const pts = totals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-    const peakI = totals.indexOf(Math.max(...totals));
-    const grid = scale.ticks.map((v) => `<line x1="${padL}" y1="${y(v).toFixed(1)}" x2="${width - padR}" y2="${y(v).toFixed(1)}" stroke="#eef1ef"/>`
-      + `<text x="${padL - 5}" y="${(y(v) + 2.8).toFixed(1)}" text-anchor="end" font-size="7.5" fill="#6e6e6e">${esc(fmt(v))}</text>`).join('');
-    const xAxis = tickIndices(series.length, 5).map((i) => {
-      const anchor = i === 0 ? 'start' : i === series.length - 1 ? 'end' : 'middle';
-      return `<text x="${x(i).toFixed(1)}" y="${height - 5}" text-anchor="${anchor}" font-size="7.5" fill="#6e6e6e">${esc(series[i].period)}</text>`;
-    }).join('');
-    return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="${esc(label)}">${grid}<polyline points="${pts}" fill="none" stroke="#18af7c" stroke-width="2.5" stroke-linejoin="round"/><circle cx="${x(peakI).toFixed(1)}" cy="${y(totals[peakI]).toFixed(1)}" r="5" fill="#18af7c" stroke="#fff" stroke-width="2"/>${xAxis}</svg>`;
-  }
-
-  // The three VLM lanes, in draw/legend order. Total sits on top of the two
-  // lanes it is made of, so it gets the heaviest stroke.
-  const VLM_LANES = [
-    { key: 'total', label: 'Total', color: '#013324', ppt: '013324', width: 2.4 },
-    { key: 'connected', label: 'Connected', color: '#18af7c', ppt: '18AF7C', width: 2 },
-    { key: 'disconnected', label: 'Disconnected', color: '#c88a1e', ppt: 'C88A1E', width: 2 }
-  ];
-
-  function activeVlmLanes(series) {
-    const active = VLM_LANES.filter((lane) => series.some((r) => Number(r[lane.key]) > 0));
-    return active.length ? active : [VLM_LANES[0]];
-  }
-
   // Evenly spaced label positions, always keeping the first and last period.
   // Evenly spaced label positions, always keeping the first and last period.
   function tickIndices(count, max) {
@@ -1182,10 +1150,24 @@
     return niceScale(lanes.reduce((all, lane) => all.concat(series.map((r) => Number(r[lane.key]) || 0)), []), 4);
   }
 
-  // The band's height varies with the slide, so the SVG stretches to fill it
-  // and carries only the lines. Axis text is HTML around the plot instead of
-  // inside the viewBox, which keeps it crisp rather than squashed with it.
-  function vlmChartSvg(series, lanes, scale) {
+  // The three VLM lanes, in draw/legend order. Total sits on top of the two
+  // lanes it is made of, so it gets the heaviest stroke.
+  const VLM_LANES = [
+    { key: 'total', label: 'Total', color: '#013324', ppt: '013324', width: 2.4 },
+    { key: 'connected', label: 'Connected', color: '#18af7c', ppt: '18AF7C', width: 2 },
+    { key: 'disconnected', label: 'Disconnected', color: '#c88a1e', ppt: 'C88A1E', width: 2 }
+  ];
+
+  function activeVlmLanes(series) {
+    const active = VLM_LANES.filter((lane) => series.some((r) => Number(r[lane.key]) > 0));
+    return active.length ? active : [VLM_LANES[0]];
+  }
+
+  // A card's height varies with the slide, so the SVG stretches to fill it and
+  // carries only the lines. Axis text is HTML around the plot instead of inside
+  // the viewBox, which keeps it crisp rather than squashed with it - and means
+  // a short card shrinks the chart instead of clipping it.
+  function plotSvg(series, lanes, scale, label) {
     const W = 1000, H = 300;
     const x = (i) => W * i / Math.max(series.length - 1, 1);
     const y = (v) => H * (1 - (v - scale.lo) / scale.span);
@@ -1194,8 +1176,37 @@
       const pts = series.map((r, i) => `${x(i).toFixed(1)},${y(Number(r[lane.key]) || 0).toFixed(1)}`).join(' ');
       return `<polyline points="${pts}" fill="none" stroke="${lane.color}" stroke-width="${lane.width}" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
     }).join('');
-    return `<svg class="vlm-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="VLM connected, disconnected and total clients over time">${grid}${lines}</svg>`;
+    return `<svg class="plot-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">${grid}${lines}</svg>`;
   }
+
+  // Positions go in data attributes, not style="": the page's CSP forbids
+  // inline styles, so placeAxisLabels applies them through the CSSOM.
+  function plotBody(series, lanes, scale, maxTicks, label, overlay = '') {
+    const at = (v) => (100 * (1 - (v - scale.lo) / scale.span)).toFixed(1);
+    const yAxis = scale.ticks.map((v) => `<span data-top="${at(v)}">${esc(fmt(v))}</span>`).join('');
+    const xAxis = tickIndices(series.length, maxTicks).map((i) => {
+      const edge = i === 0 ? ' start' : i === series.length - 1 ? ' end' : '';
+      const pct = (100 * i / Math.max(series.length - 1, 1)).toFixed(2);
+      return `<span class="plot-tick${edge}" data-left="${pct}">${esc(series[i].period)}</span>`;
+    }).join('');
+    return `<div class="plot"><div class="plot-y">${yAxis}</div>`
+      + `<div class="plot-canvas">${plotSvg(series, lanes, scale, label)}${overlay}</div></div>`
+      + `<div class="plot-x">${xAxis}</div>`;
+  }
+
+  const TREND_LANE = [{ key: 'total', color: '#18af7c', width: 2.5 }];
+
+  function trendCard(series) {
+    if (!series.length) return card('Software Usage Trend', '<div class="empty">No machine-count data</div>');
+    const scale = niceScale(series.map((r) => r.total), 4);
+    const peak = series.reduce((a, b, i) => (b.total > series[a].total ? i : a), 0);
+    // The peak marker is HTML over the canvas, because a circle inside a
+    // stretched viewBox comes out as an ellipse.
+    const dot = `<i class="plot-peak" data-left="${(100 * peak / Math.max(series.length - 1, 1)).toFixed(2)}"`
+      + ` data-top="${(100 * (1 - (series[peak].total - scale.lo) / scale.span)).toFixed(1)}"></i>`;
+    return card('Software Usage Trend', plotBody(series, TREND_LANE, scale, 5, 'Total machines over time', dot), 'plot-card');
+  }
+
 
   // The legend lives in the card's title row, matching where it sits on the
   // .pptx, so the band keeps its full height for the plot.
@@ -1204,26 +1215,16 @@
     const keys = lanes.map((lane) => `<span class="vlm-key lane-${lane.key}"><i></i>${esc(lane.label)}</span>`).join('');
     const head = `<div class="card-title vlm-title"><span>VLM Usage Trend</span><span class="vlm-legend">${keys}</span></div>`;
     if (!series.length) return `<div class="card vlm-card">${head}<div class="card-body"><div class="empty">No VLM usage data</div></div></div>`;
-    const scale = vlmScale(series, lanes);
-    const at = (v) => (100 * (1 - (v - scale.lo) / scale.span)).toFixed(1);
-    // Positions go in data attributes, not style="": the page's CSP forbids
-    // inline styles, so placeAxisLabels applies them through the CSSOM.
-    const yAxis = scale.ticks.map((v) => `<span data-top="${at(v)}">${esc(fmt(v))}</span>`).join('');
-    const xAxis = tickIndices(series.length, 8).map((i) => {
-      const edge = i === 0 ? ' start' : i === series.length - 1 ? ' end' : '';
-      const pct = (100 * i / Math.max(series.length - 1, 1)).toFixed(2);
-      return `<span class="vlm-tick${edge}" data-left="${pct}">${esc(series[i].period)}</span>`;
-    }).join('');
-    return `<div class="card vlm-card">${head}<div class="card-body vlm-body">`
-      + `<div class="vlm-plot"><div class="vlm-yaxis">${yAxis}</div>`
-      + `<div class="vlm-canvas">${vlmChartSvg(series, lanes, scale)}</div></div>`
-      + `<div class="vlm-xaxis">${xAxis}</div></div></div>`;
+    const body = plotBody(series, lanes, vlmScale(series, lanes), 8,
+      'VLM connected, disconnected and total clients over time');
+    return `<div class="card vlm-card plot-card">${head}<div class="card-body plot-body">${body}</div></div>`;
   }
 
   function placeAxisLabels(root) {
     root.querySelectorAll('[data-top]').forEach((el) => { el.style.top = `${el.dataset.top}%`; });
     root.querySelectorAll('[data-left]').forEach((el) => { el.style.left = `${el.dataset.left}%`; });
     root.querySelectorAll('[data-width]').forEach((el) => { el.style.width = `${el.dataset.width}%`; });
+    root.querySelectorAll('[data-left][data-top]').forEach((el) => { el.style.left = `${el.dataset.left}%`; });
   }
 
   function card(title, body, extra = '') {
@@ -1270,13 +1271,13 @@
           ${card('NI SW Licenses (Finite Qty)', finite)}
         </div>
         <div class="col center">
-          ${card('Software Usage Trend', chartSvg(data.machine.df))}
+          ${trendCard(data.machine.df)}
           ${card('Software Usage Data', `<div class="stats"><div class="stat accent"><div class="big">${fmt(stats.max_total)}</div><div class="lbl">Peak machines</div><div class="per">${esc(stats.max_period)}</div></div><div class="stat"><div class="big">${fmt(stats.min_total)}</div><div class="lbl">Min machines</div><div class="per">${esc(stats.min_period)}</div></div></div><div class="strip"><span>Avg quarterly increase</span><span class="pct">${stats.avg_pct_change >= 0 ? '+' : ''}${stats.avg_pct_change.toFixed(1)}%</span></div>`)}
+          ${data.sw_count.show ? swCard(data.sw_count) : ''}
         </div>
         <div class="col right">
           ${card('Top Site Locations', locRows ? table(['COUNTRY', 'STATE', 'CITY', 'COUNT'], locRows, 'site-table') : '<div class="empty">No location data</div>')}
           ${card('Version Usage', verRows ? table(['PRODUCT', 'TOTAL', 'TOP VER.', '%'], verRows, 'version-table') : '<div class="empty">No version data</div>')}
-          ${data.sw_count.show ? swCard(data.sw_count) : ''}
           ${card('Training Credit Usage', `<div class="stats3"><div><div class="lbl">Purchased</div><div class="med">${fmt(data.credits.purchased)}</div></div><div><div class="lbl">Used</div><div class="med">${fmt(data.credits.used)}</div></div><div><div class="lbl">Utilized</div><div class="med">${data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`}</div></div></div>`)}
           ${card('Technical Support', `<b>${esc(data.support.tier || '—')}</b><span class="scope">${esc(data.support.scope || '')}</span>${data.support.systemlink_snow ? '<b class="snow">SystemLink Support (SNOW)</b>' : ''}`, 'support-card')}
         </div>
@@ -1308,7 +1309,7 @@
       finite_licenses: parseFinite($('finiteText').value),
       machine: { df: machine, stats: computeStats(machine) },
       vlm: { df: showVlm ? parseVlm($('vlmText').value) : [], show: showVlm },
-      sw_count: { ...(showSw ? parseSwCount($('swCountText').value) : { products: [], total: 0, months: 0 }), show: showSw, max_bars: showVlm ? 4 : 5 },
+      sw_count: { ...(showSw ? parseSwCount($('swCountText').value) : { products: [], total: 0, months: 0 }), show: showSw, max_bars: showVlm ? 3 : 5 },
       locations_top5: topLocations(locations),
       versions_top5: topVersions(versions),
       credits: { purchased: $('creditsPurchased').value.trim() || '—', used: $('creditsUsed').value.trim() || '—', pct_used: pctUsed },
@@ -1897,8 +1898,8 @@
       finite_licenses: Array.isArray(payload.finite_licenses) ? payload.finite_licenses : [],
       machine: { df: machine, stats: computeStats(machine) },
       vlm: { df: showVlm ? parseVlm(texts.vlm_text || '') : [], show: showVlm },
-      sw_count: { ...(showSw ? parseSwCount(texts.sw_count_text || '') : { products: [], total: 0, months: 0 }), show: showSw, max_bars: showVlm ? 4 : 5 },
-      locations_top5: topLocations(locations),
+      sw_count: { ...(showSw ? parseSwCount(texts.sw_count_text || '') : { products: [], total: 0, months: 0 }), show: showSw, max_bars: showVlm ? 3 : 5 },
+locations_top5: topLocations(locations),
       versions_top5: topVersions(versions),
       credits: { purchased: fields.f_flex_purchased || '—', used: fields.f_flex_used || '—', pct_used: pctUsed },
       support: { tier: fields.f_support_tier || '—', scope: supportScope, systemlink_snow: systemlinkSnow }
@@ -2331,23 +2332,34 @@
     // Top Site Locations and the whole left column keep the size they have
     // without the band.
     const showVlm = data.vlm.show;
+    const showSw = data.sw_count.show;
     const bandH = 1.30;
     const centerBottom = top + 6.2 - (showVlm ? bandH + 0.14 : 0);
-    area = addCard(slide, pptx, 'Software Usage Trend', centerX, top, colW, 3.4);
+    // Software Usage by Product sits under Software Usage Data. Without the
+    // band only the stats card gives up height; with it the trend does too,
+    // because 4.76in will not hold a full-size chart and three cards.
+    const trendH = showSw && showVlm ? 2.34 : 3.4;
+    const statsH = showSw ? 1.24 : centerBottom - top - 3.52;
+    area = addCard(slide, pptx, 'Software Usage Trend', centerX, top, colW, trendH);
     addTrend(slide, pptx, data.machine.df, area);
-    area = addCard(slide, pptx, 'Software Usage Data', centerX, top + 3.52, colW, centerBottom - top - 3.52);
+    area = addCard(slide, pptx, 'Software Usage Data', centerX, top + trendH + 0.12, colW, statsH);
     addStatsCard(slide, pptx, area, data.machine.stats);
+    if (showSw) {
+      const swY = top + trendH + statsH + 0.24;
+      const swH = centerBottom - swY;
+      // A short card, like the VLM band: addCard's standard 0.52in of title
+      // and padding would leave almost nothing for the bars.
+      addRect(slide, pptx, centerX, swY, colW, swH, PPT.white, PPT.border);
+      addText(slide, 'SOFTWARE USAGE BY PRODUCT', { x: centerX + 0.12, y: swY + 0.07, w: colW - 0.24, h: 0.18, fontSize: 7.5, bold: true, color: PPT.accent });
+      addSwCount(slide, pptx, { x: centerX + 0.14, y: swY + 0.29, w: colW - 0.28, h: swH - 0.37 }, data.sw_count);
+    }
 
     // Locations/version cards split their space by their actual row counts.
     const nLoc = Math.max(data.locations_top5.length, 1);
     const nVer = Math.max(data.versions_top5.length, 1);
-    const showSw = data.sw_count.show;
     const trainingH = showVlm ? 0.74 : 1.18;
     const supportH = showVlm ? 0.56 : 0.86;
-    const swH = showSw ? (showVlm ? 0.92 : 1.20) : 0;
-    // One 0.12in gap between each pair of cards in the column.
-    const gaps = showSw ? 0.48 : 0.36;
-    const tablesH = (centerBottom - top) - trainingH - supportH - swH - gaps;
+    const tablesH = (centerBottom - top) - trainingH - supportH - 0.36;
     // With the band on, the two tables share the reduced space by row count, so
     // Version Usage keeps enough room for its rows.
     const locShare = (nLoc + 1) / (nLoc + nVer + 2);
@@ -2366,13 +2378,7 @@
       { text: r.version || '' },
       { text: `${r.pct || 0}%`, bold: true, color: PPT.accent, align: 'right' }
     ]), area, [0.38, 0.19, 0.27, 0.16], { fitAll: true, minFontSize: 5.8 });
-    let stackY = top + tablesH + 0.24;
-    if (showSw) {
-      area = addCard(slide, pptx, 'Software Usage by Product', rightX, stackY, colW, swH);
-      addSwCount(slide, pptx, area, data.sw_count);
-      stackY += swH + 0.12;
-    }
-    const trainingY = stackY;
+    const trainingY = top + tablesH + 0.24;
     area = addCard(slide, pptx, 'Training Credit Usage', rightX, trainingY, colW, trainingH);
     const creditSize = showVlm ? 12.5 : 16;
     [['Purchased', data.credits.purchased, PPT.dark], ['Used', data.credits.used, PPT.dark], ['Utilized', data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`, PPT.accent]].forEach(([label, value, color], i) => {

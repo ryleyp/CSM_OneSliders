@@ -411,6 +411,11 @@ def test_github_pages_lite_security():
           and "Software Usage by Product" in app_js
           and "addSwCount" in app_js)
     # Bar widths cannot ride in style="" - the page's CSP is style-src 'self'.
+    # Deleting chartSvg once took VLM_LANES out with it, and every VLM render
+    # threw until the next reload.
+    check("pages lite defines every chart helper it calls",
+          all(name in app_js for name in
+              ("VLM_LANES", "activeVlmLanes", "plotSvg", "plotBody", "trendCard", "niceScale")))
     check("pages lite keeps generated geometry out of inline styles",
           'style-src \'self\'' in index
           and "data-width" in app_js

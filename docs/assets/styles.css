@@ -407,10 +407,11 @@ details textarea {
 .col.left { grid-template-rows: minmax(0, .9fr) minmax(0, .75fr) minmax(0, 1.75fr); }
 .col.center { grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr); }
 .col.right { grid-template-rows: minmax(0, 1.08fr) minmax(0, 1.08fr) minmax(0, .66fr) minmax(0, .58fr); }
-/* The optional Software Usage by Product card makes the right column five
-   deep; the rows mirror the .pptx heights in inches. */
-.slide-grid.with-sw .col.right { grid-template-rows: minmax(0, 1.24fr) minmax(0, 1.24fr) minmax(0, 1.2fr) minmax(0, 1.06fr) minmax(0, .98fr); }
-.slide-grid.with-sw.with-vlm .col.right { grid-template-rows: minmax(0, 1.14fr) minmax(0, .98fr) minmax(0, .78fr) minmax(0, .66fr) minmax(0, .72fr); }
+/* The optional Software Usage by Product card makes the centre column three
+   deep; the rows mirror the .pptx heights in inches. Without the band only
+   the stats card gives up height; with it the trend does too. */
+.slide-grid.with-sw .col.center { grid-template-rows: minmax(0, 3.4fr) minmax(0, 1.36fr) minmax(0, 1.2fr); }
+.slide-grid.with-sw.with-vlm .col.center { grid-template-rows: minmax(0, 2.3fr) minmax(0, 1.36fr) minmax(0, .86fr); }
 
 /* Optional VLM graph: a wide band under the centre and right columns, matching
    the .pptx split (1.30in band, content bottom at 5.84in). The left column
@@ -421,45 +422,53 @@ details textarea {
    below them absorb the band. */
 .slide-grid.with-vlm .col.center { grid-template-rows: minmax(0, 1.25fr) minmax(0, .49fr); }
 .slide-grid.with-vlm .col.right { grid-template-rows: minmax(0, .9fr) minmax(0, .78fr) minmax(0, .4fr) minmax(0, .42fr); }
-.slide-grid.with-vlm .col.center .card:last-child { padding: 2%; }
-.slide-grid.with-vlm .col.center .card:last-child .card-title { font-size: clamp(5px, .7cqw, 8px); margin-bottom: 1%; }
+.slide-grid:is(.with-vlm, .with-sw) .col.center .card:nth-child(2) { padding: 2%; }
+.slide-grid:is(.with-vlm, .with-sw) .col.center .card:nth-child(2) .card-title { font-size: clamp(5px, .7cqw, 8px); margin-bottom: 1%; }
 .slide-grid.with-vlm .sw-row { font-size: clamp(4.4px, .6cqw, 6.8px); }
 .slide-grid.with-vlm .sw-more { font-size: clamp(4.2px, .55cqw, 6.2px); }
 
 /* The right column is crowded by either option, so its lower cards compact
    the same way for both. */
-.slide-grid:is(.with-vlm, .with-sw) .col.right .card:nth-child(n+2) { padding: 2%; }
-.slide-grid:is(.with-vlm, .with-sw) .col.right .card:nth-child(n+2) .card-title { font-size: clamp(5px, .7cqw, 8px); margin-bottom: 1%; }
-.slide-grid:is(.with-vlm, .with-sw) .site-table th,
-.slide-grid:is(.with-vlm, .with-sw) .site-table td { padding: 1.2% 1.7%; line-height: 1.08; }
-.slide-grid:is(.with-vlm, .with-sw) .support-card b { font-size: clamp(6.4px, .88cqw, 10px); }
-.slide-grid:is(.with-vlm, .with-sw) .support-card .scope { font-size: clamp(5px, .66cqw, 7.5px); margin-top: 1%; }
-.slide-grid:is(.with-vlm, .with-sw) .support-card .snow { margin-top: 0; }
-.slide-grid:is(.with-vlm, .with-sw) .stats3 .med { font-size: clamp(8px, 1.15cqw, 14px); }
-.slide-grid:is(.with-vlm, .with-sw) .stats3 .lbl { font-size: clamp(4.6px, .64cqw, 7.5px); }
-.slide-grid:is(.with-vlm, .with-sw) .version-table { font-size: clamp(4.2px, .56cqw, 6.4px); }
-.slide-grid:is(.with-vlm, .with-sw) .version-table th { font-size: clamp(4px, .52cqw, 5.9px); }
-.slide-grid:is(.with-vlm, .with-sw) .version-table th,
-.slide-grid:is(.with-vlm, .with-sw) .version-table td { padding: .9% 1.7%; }
-/* Both at once leaves the least room of all. */
-.slide-grid.with-vlm.with-sw .support-card b { font-size: clamp(5.8px, .78cqw, 9px); }
-.slide-grid.with-vlm.with-sw .support-card .scope { font-size: clamp(4.6px, .6cqw, 6.8px); }
-.slide-grid.with-vlm.with-sw .site-table { font-size: clamp(4.2px, .56cqw, 6.2px); }
-.slide-grid.with-vlm.with-sw .site-table th { font-size: clamp(4px, .5cqw, 5.6px); }
-.slide-grid.with-vlm.with-sw .site-table th,
-.slide-grid.with-vlm.with-sw .site-table td { padding: .8% 1.4%; }
-.slide-grid.with-vlm .stats .big { font-size: clamp(10px, 1.7cqw, 20px); }
-.slide-grid.with-vlm .stats .lbl { font-size: clamp(4.6px, .64cqw, 7.5px); }
-.slide-grid.with-vlm .stats .per { font-size: clamp(4.2px, .56cqw, 6.6px); }
-.slide-grid.with-vlm .strip { font-size: clamp(4.6px, .68cqw, 7.5px); padding: 1.6%; margin-top: 1.6%; }
-.slide-grid.with-vlm .strip .pct { font-size: clamp(8px, 1.2cqw, 15px); }
+.slide-grid.with-vlm .col.right .card:nth-child(n+2) { padding: 2%; }
+.slide-grid.with-vlm .col.right .card:nth-child(n+2) .card-title { font-size: clamp(5px, .7cqw, 8px); margin-bottom: 1%; }
+.slide-grid.with-vlm .site-table th,
+.slide-grid.with-vlm .site-table td { padding: 1.2% 1.7%; line-height: 1.08; }
+.slide-grid.with-vlm .support-card b { font-size: clamp(6.4px, .88cqw, 10px); }
+.slide-grid.with-vlm .support-card .scope { font-size: clamp(5px, .66cqw, 7.5px); margin-top: 1%; }
+.slide-grid.with-vlm .support-card .snow { margin-top: 0; }
+.slide-grid.with-vlm .stats3 .med { font-size: clamp(8px, 1.15cqw, 14px); }
+.slide-grid.with-vlm .stats3 .lbl { font-size: clamp(4.6px, .64cqw, 7.5px); }
+.slide-grid.with-vlm .version-table { font-size: clamp(4.2px, .56cqw, 6.4px); }
+.slide-grid.with-vlm .version-table th { font-size: clamp(4px, .52cqw, 5.9px); }
+.slide-grid.with-vlm .version-table th,
+.slide-grid.with-vlm .version-table td { padding: .9% 1.7%; }
+
+
+.slide-grid:is(.with-vlm, .with-sw) .stats .big { font-size: clamp(10px, 1.7cqw, 20px); }
+.slide-grid:is(.with-vlm, .with-sw) .stats .lbl { font-size: clamp(4.6px, .64cqw, 7.5px); }
+.slide-grid:is(.with-vlm, .with-sw) .stats .per { font-size: clamp(4.2px, .56cqw, 6.6px); }
+.slide-grid:is(.with-vlm, .with-sw) .strip { font-size: clamp(4.6px, .68cqw, 7.5px); padding: 1.6%; margin-top: 1.6%; }
+.slide-grid:is(.with-vlm, .with-sw) .strip .pct { font-size: clamp(8px, 1.2cqw, 15px); }
 
 /* Percentage padding resolves against width, and this card is double-width,
    so it is sized against the slide instead to match the other cards. */
 .slide-grid .vlm-card { grid-column: 2 / 4; grid-row: 2; padding: clamp(3px, .85cqw, 11px); }
 .vlm-card .card-title { margin-bottom: clamp(1px, .3cqw, 4px); }
+/* Both charts stretch to their card, so a short card shrinks the plot. */
+.plot-card .card-body { display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+.plot-peak {
+  position: absolute;
+  width: clamp(4px, .6cqw, 8px);
+  height: clamp(4px, .6cqw, 8px);
+  margin: calc(clamp(4px, .6cqw, 8px) / -2) 0 0 calc(clamp(4px, .6cqw, 8px) / -2);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px #fff;
+}
 /* Ranked product bars. The widths come from data-width, applied through the
    CSSOM, because the page's CSP blocks inline style="". */
+.slide-grid .sw-card { padding: clamp(3px, .9cqw, 11px); }
+.sw-card .card-title { margin-bottom: clamp(1px, .3cqw, 4px); }
 .sw-list { display: flex; flex-direction: column; height: 100%; }
 .sw-row {
   display: flex;
@@ -516,10 +525,10 @@ details textarea {
 
 /* The plot fills whatever height the band gets; the axis labels sit outside
    the stretched viewBox so they stay crisp. */
-.vlm-body { display: flex; flex-direction: column; gap: 2px; }
-.vlm-plot { flex: 1 1 auto; min-height: 0; display: flex; gap: clamp(2px, .4cqw, 6px); padding: clamp(3px, .42cqw, 5px) 0; }
-.vlm-yaxis { position: relative; flex: 0 0 auto; width: clamp(16px, 2.6cqw, 34px); }
-.vlm-yaxis span {
+.plot-body { display: flex; flex-direction: column; gap: 2px; }
+.plot { flex: 1 1 auto; min-height: 0; display: flex; gap: clamp(2px, .4cqw, 6px); padding: clamp(3px, .42cqw, 5px) 0; }
+.plot-y { position: relative; flex: 0 0 auto; width: clamp(16px, 2.6cqw, 34px); }
+.plot-y span {
   position: absolute;
   right: 0;
   transform: translateY(-50%);
@@ -527,15 +536,16 @@ details textarea {
   color: var(--gray);
   white-space: nowrap;
 }
-.vlm-canvas { position: relative; flex: 1 1 auto; min-width: 0; }
-.vlm-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.vlm-xaxis {
+.plot-canvas { position: relative; flex: 1 1 auto; min-width: 0; }
+.plot-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.plot-x {
   position: relative;
   flex: 0 0 auto;
   height: clamp(7px, 1cqw, 11px);
   margin-left: calc(clamp(16px, 2.6cqw, 34px) + clamp(2px, .4cqw, 6px));
+  overflow: hidden;
 }
-.vlm-tick {
+.plot-tick {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
@@ -543,8 +553,8 @@ details textarea {
   color: var(--gray);
   white-space: nowrap;
 }
-.vlm-tick.start { transform: none; }
-.vlm-tick.end { transform: translateX(-100%); }
+.plot-tick.start { transform: none; }
+.plot-tick.end { transform: translateX(-100%); }
 
 .card {
   border: 1px solid #ddd;
