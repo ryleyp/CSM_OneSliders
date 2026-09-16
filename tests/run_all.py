@@ -413,6 +413,15 @@ def test_github_pages_lite_security():
     # Bar widths cannot ride in style="" - the page's CSP is style-src 'self'.
     # Deleting chartSvg once took VLM_LANES out with it, and every VLM render
     # threw until the next reload.
+    # The .pptx used to drop the bundle card, stretch two licence rows into
+    # banners, and print '14' for '14%' because fmt() reads the number out.
+    check("pages lite deck draws both left-column cards",
+          "'No bundles provided'" in app_js and "'No finite licenses provided'" in app_js)
+    check("pages lite deck caps how far table rows stretch",
+          "Math.min(area.h / needs.reduce" in app_js)
+    check("pages lite deck does not round a formatted percentage",
+          "fmt(data.credits.purchased)" in app_js
+          and "addText(slide, value, { x, y: area.y +" in app_js)
     check("pages lite defines every chart helper it calls",
           all(name in app_js for name in
               ("VLM_LANES", "activeVlmLanes", "plotSvg", "plotBody", "trendCard", "niceScale")))

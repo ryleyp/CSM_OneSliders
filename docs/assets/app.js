@@ -2119,9 +2119,11 @@ locations_top5: topLocations(locations),
         rowTexts = texts(rowsToShow).concat([[`+${overflow} more`]]);
       }
     }
-    // Row heights proportional to what each row's wrapped text needs.
+    // Row heights proportional to what each row's wrapped text needs. The
+    // stretch is capped: two rows in a tall card should leave white space
+    // below, not become banners the height of the card.
     const needs = rowTexts.map((r) => estRowH(r, colWsIn, bodySize));
-    const scale = area.h / needs.reduce((s, n) => s + n, 0);
+    const scale = Math.min(area.h / needs.reduce((s, n) => s + n, 0), 1.35);
     const rowHs = needs.map((n) => n * scale);
     const headerSize = Math.max(options.minHeaderSize || 5.2, Math.min(6.8, bodySize - 0.4));
     let x = area.x;
@@ -2269,17 +2271,25 @@ locations_top5: topLocations(locations),
   }
 
   function addStatsCard(slide, pptx, area, stats) {
-    // The card is squeezed when the optional VLM band is on the slide.
+    // The card is squeezed when either optional card is on the slide. The
+    // tight layout is measured against the box it has to fit rather than fixed
+    // offsets: at this size the period line used to land below the box, where
+    // the strip is drawn over the top of it.
+    const boxH = area.h * 0.62;
     const tight = area.h < 2.0;
+    const fit = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
     const m = tight
-      ? { numY: 0.05, numH: 0.28, numSize: 15, lblY: 0.34, lblH: 0.15, lblSize: 6.2, perY: 0.49, perH: 0.15, perSize: 5.8, stripLblY: 0.75, stripLblH: 0.20, stripLblSize: 6.6, pctY: 0.72, pctH: 0.26, pctSize: 12 }
+      ? { numY: boxH * 0.06, numH: boxH * 0.44, numSize: fit(boxH * 30, 11, 16),
+          lblY: boxH * 0.52, lblH: boxH * 0.22, lblSize: fit(boxH * 13, 5, 7),
+          perY: boxH * 0.74, perH: boxH * 0.22, perSize: fit(boxH * 11.5, 4.6, 6.4),
+          stripLblY: 0.74, stripLblH: 0.17, stripLblSize: 6.6, pctY: 0.70, pctH: 0.21, pctSize: 12 }
       : { numY: 0.13, numH: 0.36, numSize: 24, lblY: 0.55, lblH: 0.20, lblSize: 7.8, perY: 0.76, perH: 0.20, perSize: 7, stripLblY: 0.77, stripLblH: 0.25, stripLblSize: 8.7, pctY: 0.72, pctH: 0.32, pctSize: 18 };
     const boxW = (area.w - 0.12) / 2;
     [
       [area.x, stats.max_total, 'Peak machines', stats.max_period, PPT.accent, PPT.accent],
       [area.x + boxW + 0.12, stats.min_total, 'Min machines', stats.min_period, PPT.dark, PPT.border]
     ].forEach(([x, num, label, period, color, line]) => {
-      addRect(slide, pptx, x, area.y, boxW, area.h * 0.62, PPT.white, line, 1);
+      addRect(slide, pptx, x, area.y, boxW, boxH, PPT.white, line, 1);
       addText(slide, fmt(num), { x, y: area.y + m.numY, w: boxW, h: m.numH, fontFace: 'Georgia', fontSize: m.numSize, bold: true, color, align: 'center' });
       addText(slide, label, { x, y: area.y + m.lblY, w: boxW, h: m.lblH, fontSize: m.lblSize, color: PPT.gray, align: 'center' });
       addText(slide, period, { x, y: area.y + m.perY, w: boxW, h: m.perH, fontSize: m.perSize, color: PPT.dark, align: 'center' });
@@ -2303,28 +2313,31 @@ locations_top5: topLocations(locations),
     let area = addCard(slide, pptx, 'Contract Details', leftX, top, colW, 1.68);
     addKeyRows(slide, area, [['EA End Date', data.ea_end_date], ['Term Duration', data.ep_term], ['Contract Scope', data.contract_scope], ['Phase', data.phase]]);
 
+    // Both cards are always drawn, each with its own empty state, so the deck
+    // matches the preview rather than silently dropping one.
     const bundles = data.bundles || [];
     const finite = data.finite_licenses || [];
     let y = top + 1.8;
+    const bundleH = bundles.length ? Math.min(2.0, 0.55 + bundles.slice(0, 4).length * 0.38) : 0.95;
+    area = addCard(slide, pptx, 'Bundle Information', leftX, y, colW, bundleH);
     if (bundles.length) {
-      const h = finite.length ? Math.min(2.0, 0.55 + bundles.slice(0, 4).length * 0.38) : 4.95;
-      area = addCard(slide, pptx, 'Bundle Information', leftX, y, colW, h);
       bundles.slice(0, Math.floor(area.h / 0.34)).forEach((bundle, i) => {
         addRect(slide, pptx, area.x, area.y + i * 0.38, area.w, 0.3, PPT.white, PPT.accent, 1);
         addText(slide, bundle, { x: area.x + 0.05, y: area.y + i * 0.38 + 0.06, w: area.w - 0.1, h: 0.18, fontSize: fitOneLine(bundle, area.w - 0.2, 8), bold: true, align: 'center' });
       });
-      y += h + 0.12;
+    } else {
+      addText(slide, 'No bundles provided', { x: area.x, y: area.y + 0.06, w: area.w, h: 0.24, fontSize: 8.5, color: PPT.gray });
     }
+    y += bundleH + 0.12;
+    area = addCard(slide, pptx, 'NI SW Licenses (Finite Qty)', leftX, y, colW, Math.max(1.35, 7.24 - y - 0.15));
     if (finite.length) {
-      area = addCard(slide, pptx, 'NI SW Licenses (Finite Qty)', leftX, y, colW, Math.max(1.35, 7.24 - y - 0.15));
       addSimpleTable(slide, pptx, ['QTY', 'LICENSE', 'TYPE'], finite.map((r) => [
         { text: fmt(r.count), bold: true, color: PPT.accent, align: 'right' },
         { text: r.license_name || '' },
         { text: r.license_type || '', color: PPT.gray, size: 6.8 }
       ]), area, [0.14, 0.56, 0.30], { fitAll: true, minFontSize: 5.1 });
-    } else if (!bundles.length) {
-      area = addCard(slide, pptx, 'Licenses & Bundles', leftX, y, colW, 4.95);
-      addText(slide, 'No license or bundle data provided', { x: area.x, y: area.y + 0.3, w: area.w, h: 0.3, fontSize: 8.5, color: PPT.gray, align: 'center' });
+    } else {
+      addText(slide, 'No finite licenses provided', { x: area.x, y: area.y + 0.06, w: area.w, h: 0.24, fontSize: 8.5, color: PPT.gray });
     }
 
     // The optional VLM graph is a wide band under the centre and right columns.
@@ -2381,10 +2394,12 @@ locations_top5: topLocations(locations),
     const trainingY = top + tablesH + 0.24;
     area = addCard(slide, pptx, 'Training Credit Usage', rightX, trainingY, colW, trainingH);
     const creditSize = showVlm ? 12.5 : 16;
-    [['Purchased', data.credits.purchased, PPT.dark], ['Used', data.credits.used, PPT.dark], ['Utilized', data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`, PPT.accent]].forEach(([label, value, color], i) => {
+    // Already-formatted strings, because fmt() would read '14%' as 14.
+    [['Purchased', fmt(data.credits.purchased), PPT.dark], ['Used', fmt(data.credits.used), PPT.dark],
+     ['Utilized', data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`, PPT.accent]].forEach(([label, value, color], i) => {
       const x = area.x + area.w / 3 * i;
       addText(slide, label, { x, y: area.y, w: area.w / 3, h: 0.2, fontSize: showVlm ? 6.4 : 7.2, color: PPT.gray, align: 'center' });
-      addText(slide, fmt(value), { x, y: area.y + (showVlm ? 0.19 : 0.27), w: area.w / 3, h: showVlm ? 0.26 : 0.32, fontFace: 'Georgia', fontSize: creditSize, bold: true, color, align: 'center' });
+      addText(slide, value, { x, y: area.y + (showVlm ? 0.19 : 0.27), w: area.w / 3, h: showVlm ? 0.26 : 0.32, fontFace: 'Georgia', fontSize: creditSize, bold: true, color, align: 'center' });
     });
     const supportY = trainingY + trainingH + 0.12;
     addRect(slide, pptx, rightX, supportY, colW, supportH, PPT.dark, PPT.dark);
@@ -2392,10 +2407,11 @@ locations_top5: topLocations(locations),
     const snow = !!data.support.systemlink_snow;
     const tierSize = showVlm ? 8.5 : 11;
     const scopeSize = showVlm ? 7 : 9;
+    const hasScope = !!data.support.scope;
     const supportRuns = [
-      { text: data.support.tier || '—', options: { fontSize: tierSize, bold: true, color: PPT.white, breakLine: snow && !data.support.scope } }
+      { text: data.support.tier || '—', options: { fontSize: tierSize, bold: true, color: PPT.white, breakLine: hasScope || snow } }
     ];
-    if (data.support.scope) supportRuns.push({ text: `   ${data.support.scope}`, options: { fontSize: scopeSize, color: PPT.muted, breakLine: snow } });
+    if (hasScope) supportRuns.push({ text: data.support.scope, options: { fontSize: scopeSize, color: PPT.muted, breakLine: snow } });
     if (snow) supportRuns.push({ text: 'SystemLink Support (SNOW)', options: { fontSize: tierSize, bold: true, color: PPT.white } });
     slide.addText(supportRuns, { x: rightX + 0.14, y: supportY + (showVlm ? 0.22 : 0.30), w: colW - 0.28, h: showVlm ? 0.30 : 0.5, fontFace: 'Calibri', valign: 'mid' });
 
