@@ -404,6 +404,17 @@ def test_github_pages_lite_security():
           "downloadCurrentPptx" in app_js
           and "repairPptxPackage" in app_js
           and "[Content_Types].xml" in app_js)
+    check("pages lite has the optional software-usage-by-product card",
+          'id="includeSwCount" type="checkbox"' in index
+          and 'id="swCountText"' in index
+          and "parseSwCount" in app_js
+          and "Software Usage by Product" in app_js
+          and "addSwCount" in app_js)
+    # Bar widths cannot ride in style="" - the page's CSP is style-src 'self'.
+    check("pages lite keeps generated geometry out of inline styles",
+          'style-src \'self\'' in index
+          and "data-width" in app_js
+          and "placeAxisLabels" in app_js)
     check("pages lite has the optional VLM usage graph",
           'id="includeVlm" type="checkbox"' in index
           and 'id="vlmText"' in index

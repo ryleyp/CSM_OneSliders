@@ -107,6 +107,16 @@
       '2025 Q2\t\tConnected_Usage\t712\tEA-15552',
       '2025 Q2\t\tDisconnected_Usage\t968\tEA-15552'
     ].join('\n'),
+    swCount: [
+      'Month of session_date\tproduct_name\tDistinct count of machine_id (measure)',
+      'Jan-24\tLabVIEW\t366', 'Aug-24\tLabVIEW\t354', 'Mar-25\tLabVIEW\t351',
+      'Jan-24\tTestStand\t196', 'Aug-24\tTestStand\t190', 'Mar-25\tTestStand\t171',
+      'Jan-24\tMAX\t151', 'Aug-24\tMAX\t152', 'Mar-25\tMAX\t151',
+      'Jan-24\tCVI\t118', 'Aug-24\tCVI\t105', 'Mar-25\tCVI\t98',
+      'Jan-24\tMStudio\t7', 'Aug-24\tMStudio\t5', 'Mar-25\tMStudio\t3',
+      'Jan-24\tDIAdem\t6', 'Aug-24\tDIAdem\t2', 'Mar-25\tDIAdem\t2',
+      'Jan-24\tVeriStand\t1', 'Aug-24\tFlexLogger\t2', 'Mar-25\tIMAQdx\t2'
+    ].join('\n'),
     finite: [
       '25\tNamed User\tLabVIEW Professional',
       '12\tConcurrent\tTestStand',
@@ -367,6 +377,83 @@
         total: Math.round(total)
       };
     });
+  }
+
+  const MONTH_NAMES = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+
+  // 'Jul-21' is what the session export writes; the ISO and US forms are here
+  // because the same table gets re-exported by hand.
+  function swMonth(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return null;
+    let m = text.match(/^([A-Za-z]{3,9})[-\s/]+(\d{2,4})$/);
+    if (m) {
+      const month = MONTH_NAMES[m[1].slice(0, 3).toLowerCase()];
+      const year = Number(m[2]);
+      if (month) return [year < 100 ? 2000 + year : year, month];
+    }
+    m = text.match(/^(\d{4})[-/](\d{1,2})(?:[-/]\d{1,2})?$/);
+    if (m) return [Number(m[1]), Number(m[2])];
+    m = text.match(/^(\d{1,2})\/(?:\d{1,2}\/)?(\d{4})$/);
+    if (m) return [Number(m[2]), Number(m[1])];
+    return null;
+  }
+
+  function parseSwCount(text) {
+    const empty = { products: [], total: 0, months: 0 };
+    const data = rows(text);
+    if (!data.length) return empty;
+    const header = data[0];
+    const hasHeader = !header.some((c) => swMonth(c));
+    const dataRows = hasHeader ? data.slice(1) : data;
+    if (!dataRows.length) return empty;
+
+    let monthI = null;
+    let productI = null;
+    let valueI;
+    if (hasHeader) {
+      header.forEach((name, i) => {
+        const low = name.toLowerCase();
+        if (monthI === null && ['month', 'date', 'period', 'quarter'].some((k) => low.includes(k))) monthI = i;
+        else if (productI === null && ['product', 'software', 'application'].some((k) => low.includes(k))) productI = i;
+      });
+      valueI = pickValueColumn(header, dataRows);
+    } else {
+      monthI = header.findIndex((c) => swMonth(c));
+      valueI = pickValueColumn(null, dataRows);
+    }
+    if (monthI === null || monthI === -1) monthI = dataRows[0].findIndex((c) => swMonth(c));
+    if (monthI === -1) return empty;
+    if (valueI === null) return empty;
+    // Whatever is left over is the product name.
+    if (productI === null) productI = dataRows[0].findIndex((c, i) => i !== monthI && i !== valueI && String(c).trim());
+    if (productI === -1) return empty;
+
+    const peaks = new Map();
+    const months = new Set();
+    dataRows.forEach((cells) => {
+      if (valueI >= cells.length || productI >= cells.length) return;
+      const month = swMonth(monthI < cells.length ? cells[monthI] : '');
+      const value = toNumber(cells[valueI]);
+      // Underscores are how the export spells spaces; the case is left alone
+      // because half these names are acronyms (CVI, MAX, LVFPGA).
+      const name = cells[productI].trim().replace(/_/g, ' ');
+      if (!month || value === null || !name) return;
+      const key = `${month[0]}-${String(month[1]).padStart(2, '0')}`;
+      months.add(key);
+      const byMonth = peaks.get(name) || new Map();
+      // Distinct machine counts cannot be added up without double-counting, so
+      // a product repeated inside one month keeps its largest reading.
+      byMonth.set(key, Math.max(byMonth.get(key) || 0, value));
+      peaks.set(name, byMonth);
+    });
+
+    const products = Array.from(peaks.entries()).map(([name, byMonth]) => {
+      const counts = Array.from(byMonth.values());
+      return { name, count: Math.max(...counts), latest: byMonth.get(Array.from(byMonth.keys()).sort().pop()) || 0 };
+    }).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+    return { products, total: products.length, months: months.size };
   }
 
   function computeStats(machine) {
@@ -1136,6 +1223,7 @@
   function placeAxisLabels(root) {
     root.querySelectorAll('[data-top]').forEach((el) => { el.style.top = `${el.dataset.top}%`; });
     root.querySelectorAll('[data-left]').forEach((el) => { el.style.left = `${el.dataset.left}%`; });
+    root.querySelectorAll('[data-width]').forEach((el) => { el.style.width = `${el.dataset.width}%`; });
   }
 
   function card(title, body, extra = '') {
@@ -1145,6 +1233,24 @@
   function table(headers, rowsHtml, className = '') {
     const cls = className ? ` class="${esc(className)}"` : '';
     return `<table${cls}><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${rowsHtml}</table>`;
+  }
+
+  // Peak monthly machines per product: the deck already talks in 'peak
+  // machines', and a product's final month is often short because the export
+  // was cut partway through it.
+  function swCard(sw) {
+    const shown = sw.products.slice(0, sw.max_bars);
+    if (!shown.length) return card('Software Usage by Product', '<div class="empty">No software session data</div>', 'sw-card');
+    const max = shown[0].count || 1;
+    const more = sw.products.length - shown.length;
+    const bars = shown.map((p) => `<div class="sw-row">`
+      + `<span class="sw-name">${esc(p.name)}</span>`
+      + `<span class="sw-bar"><i data-width="${(100 * p.count / max).toFixed(1)}"></i></span>`
+      + `<span class="sw-qty">${fmt(p.count)}</span></div>`).join('');
+    const foot = more > 0
+      ? `<div class="sw-more">+${fmt(more)} more product${more === 1 ? '' : 's'} in use</div>`
+      : '';
+    return card('Software Usage by Product', `<div class="sw-list">${bars}${foot}</div>`, 'sw-card');
   }
 
   function renderSlide(data) {
@@ -1157,7 +1263,7 @@
     const verRows = data.versions_top5.map((r) => `<tr><td>${esc(r.product)}</td><td>${fmt(r.product_total ?? r.users)}</td><td>${esc(r.version)}</td><td class="qty">${r.pct}%</td></tr>`).join('');
     return `
       <div class="slide-header"><div><div class="slide-label">Enterprise Agreement</div><div class="slide-title">${esc(data.service_id || 'EA')} · ${esc(data.customer || 'Customer')}</div></div><div class="updated">Updated ${esc(data.updated_date)}</div></div>
-      <div class="slide-grid${data.vlm.show ? ' with-vlm' : ''}">
+      <div class="slide-grid${data.vlm.show ? ' with-vlm' : ''}${data.sw_count.show ? ' with-sw' : ''}">
         <div class="col left">
           ${card('Contract Details', [['EA End Date', data.ea_end_date], ['Term Duration', data.ep_term], ['Contract Scope', data.contract_scope], ['Phase', data.phase]].map(([k, v]) => `<div class="krow"><span class="key">${esc(k)}</span><span class="value">${esc(v || '—')}</span></div>`).join(''), 'contract-card')}
           ${card('Bundle Information', bundles)}
@@ -1170,6 +1276,7 @@
         <div class="col right">
           ${card('Top Site Locations', locRows ? table(['COUNTRY', 'STATE', 'CITY', 'COUNT'], locRows, 'site-table') : '<div class="empty">No location data</div>')}
           ${card('Version Usage', verRows ? table(['PRODUCT', 'TOTAL', 'TOP VER.', '%'], verRows, 'version-table') : '<div class="empty">No version data</div>')}
+          ${data.sw_count.show ? swCard(data.sw_count) : ''}
           ${card('Training Credit Usage', `<div class="stats3"><div><div class="lbl">Purchased</div><div class="med">${fmt(data.credits.purchased)}</div></div><div><div class="lbl">Used</div><div class="med">${fmt(data.credits.used)}</div></div><div><div class="lbl">Utilized</div><div class="med">${data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`}</div></div></div>`)}
           ${card('Technical Support', `<b>${esc(data.support.tier || '—')}</b><span class="scope">${esc(data.support.scope || '')}</span>${data.support.systemlink_snow ? '<b class="snow">SystemLink Support (SNOW)</b>' : ''}`, 'support-card')}
         </div>
@@ -1180,6 +1287,7 @@
   function buildData() {
     const machine = parseMachine($('machineText').value);
     const showVlm = $('includeVlm').checked;
+    const showSw = $('includeSwCount').checked;
     const locations = parseLocations($('locationsText').value, $('avoidLocationDoubleCount').checked);
     const versions = parseVersions($('versionsText').value);
     const purchased = toNumber($('creditsPurchased').value);
@@ -1200,6 +1308,7 @@
       finite_licenses: parseFinite($('finiteText').value),
       machine: { df: machine, stats: computeStats(machine) },
       vlm: { df: showVlm ? parseVlm($('vlmText').value) : [], show: showVlm },
+      sw_count: { ...(showSw ? parseSwCount($('swCountText').value) : { products: [], total: 0, months: 0 }), show: showSw, max_bars: showVlm ? 4 : 5 },
       locations_top5: topLocations(locations),
       versions_top5: topVersions(versions),
       credits: { purchased: $('creditsPurchased').value.trim() || '—', used: $('creditsUsed').value.trim() || '—', pct_used: pctUsed },
@@ -1216,6 +1325,7 @@
     if (!data.versions_top5.length) items.push('Usage Versions did not parse; Version Usage will be empty.');
     if (data.credits.pct_used === '—') items.push('Enter purchased and used credits to calculate utilization.');
     if (data.vlm.show && !data.vlm.df.length) items.push('VLM usage is switched on but the pasted table did not parse; the VLM graph will be empty.');
+    if (data.sw_count.show && !data.sw_count.products.length) items.push('Software usage by product is switched on but the pasted table did not parse; that card will be empty.');
     return items;
   }
 
@@ -1633,6 +1743,7 @@
   function render() {
     const data = buildData();
     $('vlmText').closest('.vlm-block').classList.toggle('on', data.vlm.show);
+    $('swCountText').closest('.vlm-block').classList.toggle('on', data.sw_count.show);
     $('warnings').innerHTML = warnings(data).map((w) => `<div class="warning">${esc(w)}</div>`).join('');
     $('slidePreview').innerHTML = renderSlide(data);
     placeAxisLabels($('slidePreview'));
@@ -1657,6 +1768,7 @@
     $('locationsText').value = EXAMPLES.locations;
     $('versionsText').value = EXAMPLES.versions;
     $('vlmText').value = EXAMPLES.vlm;
+    $('swCountText').value = EXAMPLES.swCount;
     setFiniteText(EXAMPLES.finite, false);
     setBundleText(EXAMPLES.bundles, false);
     $('serviceId').value = 'EA-15725';
@@ -1730,7 +1842,8 @@
         machine_text: $('machineText').value,
         locations_text: $('locationsText').value,
         versions_text: $('versionsText').value,
-        vlm_text: $('vlmText').value
+        vlm_text: $('vlmText').value,
+        sw_count_text: $('swCountText').value
       },
       fields: {
         f_service_id: $('serviceId').value,
@@ -1750,7 +1863,8 @@
       },
       settings: {
         avoid_location_double_count: $('avoidLocationDoubleCount').checked,
-        include_vlm: $('includeVlm').checked
+        include_vlm: $('includeVlm').checked,
+        include_sw_count: $('includeSwCount').checked
       },
       finite_licenses: parseFinite($('finiteText').value),
       bundles: $('bundleText').value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
@@ -1762,6 +1876,7 @@
     const fields = payload.fields || {};
     const machine = parseMachine(texts.machine_text || '');
     const showVlm = !!(payload.settings && payload.settings.include_vlm);
+    const showSw = !!(payload.settings && payload.settings.include_sw_count);
     const locations = parseLocations(texts.locations_text || '', payload.settings ? payload.settings.avoid_location_double_count !== false : true);
     const versions = parseVersions(texts.versions_text || '');
     const purchased = toNumber(fields.f_flex_purchased || '');
@@ -1782,6 +1897,7 @@
       finite_licenses: Array.isArray(payload.finite_licenses) ? payload.finite_licenses : [],
       machine: { df: machine, stats: computeStats(machine) },
       vlm: { df: showVlm ? parseVlm(texts.vlm_text || '') : [], show: showVlm },
+      sw_count: { ...(showSw ? parseSwCount(texts.sw_count_text || '') : { products: [], total: 0, months: 0 }), show: showSw, max_bars: showVlm ? 4 : 5 },
       locations_top5: topLocations(locations),
       versions_top5: topVersions(versions),
       credits: { purchased: fields.f_flex_purchased || '—', used: fields.f_flex_used || '—', pct_used: pctUsed },
@@ -1796,6 +1912,7 @@
     $('locationsText').value = texts.locations_text || '';
     $('versionsText').value = texts.versions_text || '';
     $('vlmText').value = texts.vlm_text || '';
+    $('swCountText').value = texts.sw_count_text || '';
     $('serviceId').value = fields.f_service_id || '';
     $('customer').value = fields.f_customer || '';
     $('startDate').value = fields.f_start_date || '';
@@ -1811,6 +1928,7 @@
     $('creditsUsed').value = fields.f_flex_used || '';
     $('avoidLocationDoubleCount').checked = payload.settings ? payload.settings.avoid_location_double_count !== false : true;
     $('includeVlm').checked = !!(payload.settings && payload.settings.include_vlm);
+    $('includeSwCount').checked = !!(payload.settings && payload.settings.include_sw_count);
     setFiniteText((payload.finite_licenses || []).map((r) => `${r.count || 0}\t${r.license_type || ''}\t${r.license_name || ''}`).join('\n'), false);
     setBundleText((payload.bundles || []).join('\n'), false);
     $('profileName').value = suggestProfileName();
@@ -2120,6 +2238,35 @@
     addPeriodAxis(slide, data, plot, px, area.y + area.h - 0.14, 8);
   }
 
+  function addSwCount(slide, pptx, area, sw) {
+    const shown = (sw.products || []).slice(0, sw.max_bars);
+    if (!shown.length) {
+      addText(slide, 'No software session data', { x: area.x, y: area.y + 0.1, w: area.w, h: 0.2, fontSize: 8, color: PPT.gray, align: 'center' });
+      return;
+    }
+    const max = shown[0].count || 1;
+    const more = sw.products.length - shown.length;
+    const moreH = more > 0 ? 0.14 : 0;
+    const pitch = (area.h - moreH) / shown.length;
+    const size = Math.max(5.2, Math.min(7.4, pitch * 44));
+    const nameW = area.w * 0.44;
+    const qtyW = area.w * 0.15;
+    const barX = area.x + nameW;
+    const barW = area.w - nameW - qtyW - 0.03;
+    shown.forEach((p, i) => {
+      const y = area.y + i * pitch;
+      const barH = Math.min(0.11, pitch * 0.58);
+      addText(slide, p.name, { x: area.x, y, w: nameW - 0.04, h: pitch, fontSize: size, color: PPT.dark, valign: 'mid' });
+      addRect(slide, pptx, barX, y + (pitch - barH) / 2, Math.max(0.02, barW * p.count / max), barH, PPT.accent, null);
+      addText(slide, fmt(p.count), { x: area.x + area.w - qtyW, y, w: qtyW, h: pitch, fontSize: size, bold: true, color: PPT.accent, align: 'right', valign: 'mid' });
+    });
+    if (more > 0) {
+      addText(slide, `+${fmt(more)} more product${more === 1 ? '' : 's'} in use`, {
+        x: area.x, y: area.y + area.h - moreH, w: area.w, h: moreH, fontSize: Math.max(5, size - 1), color: PPT.gray, valign: 'mid'
+      });
+    }
+  }
+
   function addStatsCard(slide, pptx, area, stats) {
     // The card is squeezed when the optional VLM band is on the slide.
     const tight = area.h < 2.0;
@@ -2194,9 +2341,13 @@
     // Locations/version cards split their space by their actual row counts.
     const nLoc = Math.max(data.locations_top5.length, 1);
     const nVer = Math.max(data.versions_top5.length, 1);
+    const showSw = data.sw_count.show;
     const trainingH = showVlm ? 0.74 : 1.18;
     const supportH = showVlm ? 0.56 : 0.86;
-    const tablesH = (centerBottom - top) - trainingH - supportH - 0.36;
+    const swH = showSw ? (showVlm ? 0.92 : 1.20) : 0;
+    // One 0.12in gap between each pair of cards in the column.
+    const gaps = showSw ? 0.48 : 0.36;
+    const tablesH = (centerBottom - top) - trainingH - supportH - swH - gaps;
     // With the band on, the two tables share the reduced space by row count, so
     // Version Usage keeps enough room for its rows.
     const locShare = (nLoc + 1) / (nLoc + nVer + 2);
@@ -2215,7 +2366,13 @@
       { text: r.version || '' },
       { text: `${r.pct || 0}%`, bold: true, color: PPT.accent, align: 'right' }
     ]), area, [0.38, 0.19, 0.27, 0.16], { fitAll: true, minFontSize: 5.8 });
-    const trainingY = top + tablesH + 0.24;
+    let stackY = top + tablesH + 0.24;
+    if (showSw) {
+      area = addCard(slide, pptx, 'Software Usage by Product', rightX, stackY, colW, swH);
+      addSwCount(slide, pptx, area, data.sw_count);
+      stackY += swH + 0.12;
+    }
+    const trainingY = stackY;
     area = addCard(slide, pptx, 'Training Credit Usage', rightX, trainingY, colW, trainingH);
     const creditSize = showVlm ? 12.5 : 16;
     [['Purchased', data.credits.purchased, PPT.dark], ['Used', data.credits.used, PPT.dark], ['Utilized', data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`, PPT.accent]].forEach(([label, value, color], i) => {

@@ -6,7 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; worker-src 'self'; child-src 'none';">
   <meta name="referrer" content="no-referrer">
   <title>EA Slide Builder Lite</title>
-  <link rel="stylesheet" href="assets/styles.css?v=20260908-vlm5">
+  <link rel="stylesheet" href="assets/styles.css?v=20260916-sw1">
 </head>
 <body>
   <header class="topbar">
@@ -138,6 +138,13 @@
             <textarea id="vlmText" spellcheck="false"></textarea>
           </label>
         </div>
+        <div class="vlm-block">
+          <label class="check"><input id="includeSwCount" type="checkbox"> Include software usage by product on the slide</label>
+          <label>Software Usage by Product (optional)
+            <span>Month · Product · Distinct count of machine_id — e.g. <code>Jul-21 ⇥ LabVIEW ⇥ 287</code>. Each product is ranked by its peak month, and the products past the top few are counted on one line.</span>
+            <textarea id="swCountText" spellcheck="false"></textarea>
+          </label>
+        </div>
       </div>
     </section>
 
@@ -167,8 +174,8 @@
     <p>GitHub Pages Lite version. Source code only is hosted; entered data stays in this browser session.</p>
   </footer>
 
-  <script src="assets/vendor/jszip.min.js?v=20260908-vlm5"></script>
-  <script src="assets/vendor/pptxgen.bundle.js?v=20260908-vlm5"></script>
-  <script src="assets/app.js?v=20260908-vlm5"></script>
+  <script src="assets/vendor/jszip.min.js?v=20260916-sw1"></script>
+  <script src="assets/vendor/pptxgen.bundle.js?v=20260916-sw1"></script>
+  <script src="assets/app.js?v=20260916-sw1"></script>
 </body>
 </html>
