@@ -1180,7 +1180,7 @@
   }
 
   // Positions go in data attributes, not style="": the page's CSP forbids
-  // inline styles, so placeAxisLabels applies them through the CSSOM.
+  // inline styles, so applyGeometry applies them through the CSSOM.
   function plotBody(series, lanes, scale, maxTicks, label, overlay = '') {
     const at = (v) => (100 * (1 - (v - scale.lo) / scale.span)).toFixed(1);
     const yAxis = scale.ticks.map((v) => `<span data-top="${at(v)}">${esc(fmt(v))}</span>`).join('');
@@ -1196,36 +1196,51 @@
 
   const TREND_LANE = [{ key: 'total', color: '#18af7c', width: 2.5 }];
 
-  function trendCard(series) {
-    if (!series.length) return card('Software Usage Trend', '<div class="empty">No machine-count data</div>');
+  function trendBody(series) {
+    if (!series.length) return '<div class="empty">No machine-count data</div>';
     const scale = niceScale(series.map((r) => r.total), 4);
     const peak = series.reduce((a, b, i) => (b.total > series[a].total ? i : a), 0);
     // The peak marker is HTML over the canvas, because a circle inside a
     // stretched viewBox comes out as an ellipse.
     const dot = `<i class="plot-peak" data-left="${(100 * peak / Math.max(series.length - 1, 1)).toFixed(2)}"`
       + ` data-top="${(100 * (1 - (series[peak].total - scale.lo) / scale.span)).toFixed(1)}"></i>`;
-    return card('Software Usage Trend', plotBody(series, TREND_LANE, scale, 5, 'Total machines over time', dot), 'plot-card');
+    return plotBody(series, TREND_LANE, scale, 5, 'Total machines over time', dot);
   }
 
 
   // The legend lives in the card's title row, matching where it sits on the
   // .pptx, so the band keeps its full height for the plot.
-  function vlmCard(series) {
-    const lanes = series.length ? activeVlmLanes(series) : [];
-    const keys = lanes.map((lane) => `<span class="vlm-key lane-${lane.key}"><i></i>${esc(lane.label)}</span>`).join('');
-    const head = `<div class="card-title vlm-title"><span>VLM Usage Trend</span><span class="vlm-legend">${keys}</span></div>`;
-    if (!series.length) return `<div class="card vlm-card">${head}<div class="card-body"><div class="empty">No VLM usage data</div></div></div>`;
-    const body = plotBody(series, lanes, vlmScale(series, lanes), 8,
-      'VLM connected, disconnected and total clients over time');
-    return `<div class="card vlm-card plot-card">${head}<div class="card-body plot-body">${body}</div></div>`;
+  function vlmTitle(series) {
+    const keys = (series.length ? activeVlmLanes(series) : [])
+      .map((lane) => `<span class="vlm-key lane-${lane.key}"><i></i>${esc(lane.label)}</span>`).join('');
+    return `<div class="card-title vlm-title"><span>VLM Usage Trend</span><span class="vlm-legend">${keys}</span></div>`;
   }
 
-  function placeAxisLabels(root) {
+  function vlmBody(series) {
+    if (!series || !series.length) return '<div class="empty">No VLM usage data</div>';
+    const lanes = activeVlmLanes(series);
+    return plotBody(series, lanes, vlmScale(series, lanes), 8,
+      'VLM connected, disconnected and total clients over time');
+  }
+
+  function applyGeometry(root) {
+    root.querySelectorAll('.card[data-x]').forEach((el) => {
+      el.style.left = `${el.dataset.x}%`;
+      el.style.top = `${el.dataset.y}%`;
+      el.style.width = `${el.dataset.cw}%`;
+      el.style.height = `${el.dataset.ch}%`;
+    });
     root.querySelectorAll('[data-top]').forEach((el) => { el.style.top = `${el.dataset.top}%`; });
     root.querySelectorAll('[data-left]').forEach((el) => { el.style.left = `${el.dataset.left}%`; });
     root.querySelectorAll('[data-width]').forEach((el) => { el.style.width = `${el.dataset.width}%`; });
+    // 1pt is 1/72in and the slide is 13.333in wide, so a point is 0.10417cqw.
+    root.querySelectorAll('table[data-fs]').forEach((el) => {
+      el.style.setProperty('--fs', `${(el.dataset.fs * 0.10417).toFixed(4)}cqw`);
+      el.style.setProperty('--hfs', `${(el.dataset.hfs * 0.10417).toFixed(4)}cqw`);
+    });
     root.querySelectorAll('[data-left][data-top]').forEach((el) => { el.style.left = `${el.dataset.left}%`; });
   }
+
 
   function card(title, body, extra = '') {
     return `<div class="card ${extra}"><div class="card-title">${esc(title)}</div><div class="card-body">${body}</div></div>`;
@@ -1239,9 +1254,9 @@
   // Peak monthly machines per product: the deck already talks in 'peak
   // machines', and a product's final month is often short because the export
   // was cut partway through it.
-  function swCard(sw) {
-    const shown = sw.products.slice(0, sw.max_bars);
-    if (!shown.length) return card('Software Usage by Product', '<div class="empty">No software session data</div>', 'sw-card');
+  function swBody(sw) {
+    const shown = (sw.products || []).slice(0, sw.max_bars);
+    if (!shown.length) return '<div class="empty">No software session data</div>';
     const max = shown[0].count || 1;
     const more = sw.products.length - shown.length;
     const bars = shown.map((p) => `<div class="sw-row">`
@@ -1251,38 +1266,142 @@
     const foot = more > 0
       ? `<div class="sw-more">+${fmt(more)} more product${more === 1 ? '' : 's'} in use</div>`
       : '';
-    return card('Software Usage by Product', `<div class="sw-list">${bars}${foot}</div>`, 'sw-card');
+    return `<div class="sw-list">${bars}${foot}</div>`;
+  }
+
+  // ---- one layout, two renderers -----------------------------------------
+  // Every card's position and size, in inches on the 13.333 x 7.5in slide.
+  // The preview and the .pptx both lay out from this list, so they cannot
+  // drift apart the way two hand-maintained layouts did.
+  // These are the numbers the preview's CSS grid resolved to, in inches on the
+  // 13.333 x 7.5in slide: a 0.92in header, then 1.5%/2.25%/2% padding and
+  // 1.5% gaps, all of which resolve against the slide width. The deck follows
+  // the preview rather than the other way round.
+  const SLIDE = { W: 13.333, H: 7.5, margin: 0.30, gap: 0.20, gut: 0.098, top: 1.12, bottom: 7.233, bandGap: 0.092 };
+
+  // Split a column into rows the way `grid-template-rows` did.
+  function distribute(total, gut, fr) {
+    const avail = total - gut * (fr.length - 1);
+    const sum = fr.reduce((acc, f) => acc + f, 0);
+    return fr.map((f) => avail * f / sum);
+  }
+
+  function slideLayout(data) {
+    const { W, margin, gap, gut, top, bottom, bandGap } = SLIDE;
+    const colW = (W - 2 * margin - 2 * gap) / 3;
+    const x = [margin, margin + colW + gap, margin + 2 * colW + 2 * gap];
+    const showVlm = data.vlm.show;
+    const showSw = data.sw_count.show;
+    const gridH = bottom - top;
+    // With the band on, the grid is 1fr / .273fr; the left column spans both
+    // rows, so its cards keep the height they have without the band.
+    const colH = showVlm ? (gridH - bandGap) / 1.273 : gridH;
+    const cards = [];
+    const column = (cx, height, rows) => {
+      const hs = distribute(height, gut, rows.map((r) => r[2]));
+      let y = top;
+      rows.forEach(([id, title, , tight], i) => {
+        cards.push({ id, title, x: cx, y, w: colW, h: hs[i], tight: !!tight });
+        y += hs[i] + gut;
+      });
+    };
+
+    column(x[0], gridH, [
+      ['contract', 'Contract Details', 0.9],
+      ['bundles', 'Bundle Information', 0.75],
+      ['finite', 'NI SW Licenses (Finite Qty)', 1.75]
+    ]);
+
+    const centre = showSw
+      ? (showVlm
+        ? [['trend', 'Software Usage Trend', 2.3, true], ['stats', 'Software Usage Data', 1.36, true], ['swcount', 'Software Usage by Product', 0.86, true]]
+        : [['trend', 'Software Usage Trend', 3.4], ['stats', 'Software Usage Data', 1.36, true], ['swcount', 'Software Usage by Product', 1.2]])
+      : (showVlm
+        ? [['trend', 'Software Usage Trend', 1.25], ['stats', 'Software Usage Data', 0.49, true]]
+        : [['trend', 'Software Usage Trend', 1.25], ['stats', 'Software Usage Data', 1]]);
+    column(x[1], colH, centre);
+
+    column(x[2], colH, showVlm
+      ? [['locations', 'Top Site Locations', 0.9, true], ['versions', 'Version Usage', 0.78, true],
+         ['training', 'Training Credit Usage', 0.4, true], ['support', 'Technical Support', 0.42, true]]
+      : [['locations', 'Top Site Locations', 1.08], ['versions', 'Version Usage', 1.08],
+         ['training', 'Training Credit Usage', 0.66], ['support', 'Technical Support', 0.58]]);
+
+    if (showVlm) {
+      cards.push({ id: 'vlm', title: 'VLM Usage Trend', x: x[1], y: top + colH + bandGap, w: colW * 2 + gap, h: gridH - colH - bandGap, tight: false });
+    }
+    return cards;
+  }
+
+  function layoutById(data) {
+    return Object.fromEntries(slideLayout(data).map((c) => [c.id, c]));
+  }
+
+  // A table in the preview shows exactly the rows the deck will show, with
+  // the same '+N more' tail, because both ask tableFit against the same card.
+  function fittedRows(items, headers, colW, options, card, toCells, toHtml, cls) {
+    if (!items.length) return null;
+    const fit = tableFit(headers, items.map(toCells), cardBody(card), colW, options);
+    const body = items.slice(0, fit.count).map(toHtml).join('')
+      + (fit.overflow ? `<tr class="more"><td colspan="${headers.length}">+${fmt(fit.overflow)} more</td></tr>` : '');
+    const headSize = Math.max(options.minHeaderSize || 5.2, Math.min(6.8, fit.bodySize - 0.4));
+    // The deck's fitted point sizes, carried over so the preview shrinks its
+    // text the same way instead of keeping a CSS size and clipping.
+    return `<table class="${esc(cls)}" data-fs="${fit.bodySize.toFixed(2)}" data-hfs="${headSize.toFixed(2)}">`
+      + `<tr>${headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr>${body}</table>`;
   }
 
   function renderSlide(data) {
     const stats = data.machine.stats;
+    const L = layoutById(data);
     const bundles = data.bundles.length ? data.bundles.slice(0, 5).map((b) => `<div class="pill">${esc(b)}</div>`).join('') : '<div class="empty">No bundles provided</div>';
-    const finiteClass = data.finite_licenses.length > 8 ? 'finite-table ultra-dense' : data.finite_licenses.length > 5 ? 'finite-table dense' : 'finite-table';
-    const finiteRows = data.finite_licenses.length ? data.finite_licenses.map((r) => `<tr><td class="qty">${fmt(r.count)}</td><td>${esc(r.license_name)}</td><td class="muted">${esc(r.license_type)}</td></tr>`).join('') : '';
-    const finite = finiteRows ? table(['QTY', 'LICENSE', 'TYPE'], finiteRows, finiteClass) : '<div class="empty">No finite licenses provided</div>';
-    const locRows = data.locations_top5.map((r) => `<tr><td>${esc(r.country || '')}</td><td>${esc(r.state || '')}</td><td>${esc(r.city || r.location)}</td><td class="qty">${fmt(r.count)}</td></tr>`).join('');
-    const verRows = data.versions_top5.map((r) => `<tr><td>${esc(r.product)}</td><td>${fmt(r.product_total ?? r.users)}</td><td>${esc(r.version)}</td><td class="qty">${r.pct}%</td></tr>`).join('');
+    const finite = fittedRows(data.finite_licenses, ['QTY', 'LICENSE', 'TYPE'], [0.14, 0.56, 0.30],
+      { fitAll: true, minFontSize: 5.1 }, L.finite,
+      (r) => [{ text: fmt(r.count) }, { text: r.license_name || '' }, { text: r.license_type || '' }],
+      (r) => `<tr><td class="qty">${fmt(r.count)}</td><td>${esc(r.license_name)}</td><td class="muted">${esc(r.license_type)}</td></tr>`,
+      'finite-table') || '<div class="empty">No finite licenses provided</div>';
+    const locations = fittedRows(data.locations_top5, ['COUNTRY', 'STATE', 'CITY', 'COUNT'], [0.27, 0.17, 0.34, 0.22],
+      { fitAll: true, minFontSize: 5.2, minHeaderSize: 4.8 }, L.locations,
+      (r) => [{ text: r.country || '' }, { text: r.state || '' }, { text: r.city || r.location || '' }, { text: fmt(r.count) }],
+      (r) => `<tr><td>${esc(r.country || '')}</td><td>${esc(r.state || '')}</td><td>${esc(r.city || r.location)}</td><td class="qty">${fmt(r.count)}</td></tr>`,
+      'site-table') || '<div class="empty">No location data</div>';
+    const versions = fittedRows(data.versions_top5, ['PRODUCT', 'TOTAL', 'TOP VER.', '%'], [0.38, 0.19, 0.27, 0.16],
+      { fitAll: true, minFontSize: 5.8 }, L.versions,
+      (r) => [{ text: r.product || '' }, { text: fmt(r.product_total ?? r.users) }, { text: r.version || '' }, { text: `${r.pct || 0}%` }],
+      (r) => `<tr><td>${esc(r.product)}</td><td>${fmt(r.product_total ?? r.users)}</td><td>${esc(r.version)}</td><td class="qty">${r.pct}%</td></tr>`,
+      'version-table') || '<div class="empty">No version data</div>';
+
+    // Card bodies by layout id; the layout decides where each one lands.
+    const body = {
+      contract: [['EA End Date', data.ea_end_date], ['Term Duration', data.ep_term], ['Contract Scope', data.contract_scope], ['Phase', data.phase]]
+        .map(([k, v]) => `<div class="krow"><span class="key">${esc(k)}</span><span class="value">${esc(v || '—')}</span></div>`).join(''),
+      bundles,
+      finite,
+      trend: trendBody(data.machine.df),
+      stats: `<div class="stats"><div class="stat accent"><div class="big">${fmt(stats.max_total)}</div><div class="lbl">Peak machines</div><div class="per">${esc(stats.max_period)}</div></div><div class="stat"><div class="big">${fmt(stats.min_total)}</div><div class="lbl">Min machines</div><div class="per">${esc(stats.min_period)}</div></div></div><div class="strip"><span>Avg quarterly increase</span><span class="pct">${stats.avg_pct_change >= 0 ? '+' : ''}${stats.avg_pct_change.toFixed(1)}%</span></div>`,
+      swcount: swBody(data.sw_count),
+      locations,
+      versions,
+      training: `<div class="stats3"><div><div class="lbl">Purchased</div><div class="med">${fmt(data.credits.purchased)}</div></div><div><div class="lbl">Used</div><div class="med">${fmt(data.credits.used)}</div></div><div><div class="lbl">Utilized</div><div class="med">${data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`}</div></div></div>`,
+      support: `<b>${esc(data.support.tier || '—')}</b><span class="scope">${esc(data.support.scope || '')}</span>${data.support.systemlink_snow ? '<b class="snow">SystemLink Support (SNOW)</b>' : ''}`,
+      vlm: vlmBody(data.vlm.df)
+    };
+    const extra = { contract: 'contract-card', support: 'support-card', trend: 'plot-card', vlm: 'vlm-card plot-card', swcount: 'sw-card' };
+    const title = { vlm: vlmTitle(data.vlm.df) };
+
+    const cards = slideLayout(data).map((c) => {
+      // Geometry rides in data attributes, not style="": the page's CSP
+      // forbids inline styles, so applyGeometry sets it through the CSSOM.
+      const pos = ` data-x="${(100 * c.x / SLIDE.W).toFixed(3)}" data-y="${(100 * c.y / SLIDE.H).toFixed(3)}"`
+        + ` data-cw="${(100 * c.w / SLIDE.W).toFixed(3)}" data-ch="${(100 * c.h / SLIDE.H).toFixed(3)}"`;
+      const head = title[c.id] || `<div class="card-title">${esc(c.title)}</div>`;
+      const cls = `card card-${c.id}${c.tight ? ' tight' : ''} ${extra[c.id] || ''}`.trim();
+      return `<div class="${cls}"${pos}>${head}<div class="card-body">${body[c.id] || ''}</div></div>`;
+    }).join('');
+
     return `
       <div class="slide-header"><div><div class="slide-label">Enterprise Agreement</div><div class="slide-title">${esc(data.service_id || 'EA')} · ${esc(data.customer || 'Customer')}</div></div><div class="updated">Updated ${esc(data.updated_date)}</div></div>
-      <div class="slide-grid${data.vlm.show ? ' with-vlm' : ''}${data.sw_count.show ? ' with-sw' : ''}">
-        <div class="col left">
-          ${card('Contract Details', [['EA End Date', data.ea_end_date], ['Term Duration', data.ep_term], ['Contract Scope', data.contract_scope], ['Phase', data.phase]].map(([k, v]) => `<div class="krow"><span class="key">${esc(k)}</span><span class="value">${esc(v || '—')}</span></div>`).join(''), 'contract-card')}
-          ${card('Bundle Information', bundles)}
-          ${card('NI SW Licenses (Finite Qty)', finite)}
-        </div>
-        <div class="col center">
-          ${trendCard(data.machine.df)}
-          ${card('Software Usage Data', `<div class="stats"><div class="stat accent"><div class="big">${fmt(stats.max_total)}</div><div class="lbl">Peak machines</div><div class="per">${esc(stats.max_period)}</div></div><div class="stat"><div class="big">${fmt(stats.min_total)}</div><div class="lbl">Min machines</div><div class="per">${esc(stats.min_period)}</div></div></div><div class="strip"><span>Avg quarterly increase</span><span class="pct">${stats.avg_pct_change >= 0 ? '+' : ''}${stats.avg_pct_change.toFixed(1)}%</span></div>`)}
-          ${data.sw_count.show ? swCard(data.sw_count) : ''}
-        </div>
-        <div class="col right">
-          ${card('Top Site Locations', locRows ? table(['COUNTRY', 'STATE', 'CITY', 'COUNT'], locRows, 'site-table') : '<div class="empty">No location data</div>')}
-          ${card('Version Usage', verRows ? table(['PRODUCT', 'TOTAL', 'TOP VER.', '%'], verRows, 'version-table') : '<div class="empty">No version data</div>')}
-          ${card('Training Credit Usage', `<div class="stats3"><div><div class="lbl">Purchased</div><div class="med">${fmt(data.credits.purchased)}</div></div><div><div class="lbl">Used</div><div class="med">${fmt(data.credits.used)}</div></div><div><div class="lbl">Utilized</div><div class="med">${data.credits.pct_used === '—' ? '—' : `${data.credits.pct_used}%`}</div></div></div>`)}
-          ${card('Technical Support', `<b>${esc(data.support.tier || '—')}</b><span class="scope">${esc(data.support.scope || '')}</span>${data.support.systemlink_snow ? '<b class="snow">SystemLink Support (SNOW)</b>' : ''}`, 'support-card')}
-        </div>
-        ${data.vlm.show ? vlmCard(data.vlm.df) : ''}
-      </div>`;
+      <div class="slide-grid">${cards}</div>`;
   }
 
   function buildData() {
@@ -1747,7 +1866,7 @@
     $('swCountText').closest('.vlm-block').classList.toggle('on', data.sw_count.show);
     $('warnings').innerHTML = warnings(data).map((w) => `<div class="warning">${esc(w)}</div>`).join('');
     $('slidePreview').innerHTML = renderSlide(data);
-    placeAxisLabels($('slidePreview'));
+    applyGeometry($('slidePreview'));
     const insightItems = generateInsights(data);
     $('insights').innerHTML = insightItems.length
       ? insightItems.map((i) => `<div class="insight"><strong>${esc(i.cat)}</strong>${esc(i.text)}</div>`).join('')
@@ -2098,19 +2217,24 @@ locations_top5: topLocations(locations),
     });
   }
 
-  function addSimpleTable(slide, pptx, headers, rowsData, area, colW, options = {}) {
-    if (!rowsData.length) {
-      addText(slide, 'No data provided', { x: area.x, y: area.y + 0.12, w: area.w, h: 0.24, fontSize: 8.5, color: PPT.gray, align: 'center' });
-      return;
-    }
+  // The body area addCard hands back, derived from a layout card. Both
+  // renderers measure tables against the same box.
+  function cardBody(c) {
+    return { x: c.x + 0.14, y: c.y + 0.38, w: c.w - 0.28, h: c.h - 0.52 };
+  }
+
+  // How many rows of a table survive in a card, and at what size. The preview
+  // and the .pptx both ask this, so they show the same rows and the same
+  // '+N more' line instead of one truncating while the other clips.
+  function tableFit(headers, rowsData, area, colW, options = {}) {
     const colWsIn = colW.map((f) => area.w * f);
     const texts = (rows) => [headers].concat(rows.map((row) => row.map((c) => c.text)));
     let rowsToShow = rowsData;
     let rowTexts = texts(rowsToShow);
     const minSize = Math.min(options.minFontSize || 5.4, 5.4);
     const bodySize = fitTableFont(rowTexts, colWsIn, area.h, options.fontSize || 7.6, minSize);
-    // If even the minimum font can't fit every row, truncate and note it
-    // instead of spilling past the card.
+    // If even the minimum font cannot fit every row, drop the tail and say so
+    // rather than spilling past the card.
     let overflow = 0;
     if (estTableH(rowTexts, colWsIn, bodySize) > area.h) {
       while (rowsToShow.length > 1 && estTableH(rowTexts, colWsIn, bodySize) > area.h) {
@@ -2119,6 +2243,16 @@ locations_top5: topLocations(locations),
         rowTexts = texts(rowsToShow).concat([[`+${overflow} more`]]);
       }
     }
+    return { count: rowsToShow.length, overflow, bodySize, rowTexts, colWsIn };
+  }
+
+  function addSimpleTable(slide, pptx, headers, rowsData, area, colW, options = {}) {
+    if (!rowsData.length) {
+      addText(slide, 'No data provided', { x: area.x, y: area.y + 0.12, w: area.w, h: 0.24, fontSize: 8.5, color: PPT.gray, align: 'center' });
+      return;
+    }
+    const { overflow, bodySize, rowTexts, colWsIn } = tableFit(headers, rowsData, area, colW, options);
+    const rowsToShow = rowsData.slice(0, rowsData.length - overflow);
     // Row heights proportional to what each row's wrapped text needs. The
     // stretch is capped: two rows in a tall card should leave white space
     // below, not become banners the height of the card.
@@ -2303,23 +2437,24 @@ locations_top5: topLocations(locations),
     const slide = pptx.addSlide();
     slide.background = { color: PPT.white };
     addHeader(slide, pptx, data);
-    const margin = 0.3;
-    const gap = 0.2;
-    const colW = (PPT.W - 2 * margin - 2 * gap) / 3;
-    const top = 1.08;
-    const leftX = margin;
-    const centerX = margin + colW + gap;
-    const rightX = margin + 2 * colW + 2 * gap;
-    let area = addCard(slide, pptx, 'Contract Details', leftX, top, colW, 1.68);
+    const L = layoutById(data);
+    const showVlm = data.vlm.show;
+    const showSw = data.sw_count.show;
+    // A short card cannot spare addCard's standard 0.52in of title and
+    // padding, so those draw their own tighter chrome.
+    const slim = (c) => {
+      addRect(slide, pptx, c.x, c.y, c.w, c.h, PPT.white, PPT.border);
+      addText(slide, c.title.toUpperCase(), { x: c.x + 0.12, y: c.y + 0.07, w: c.w - 0.24, h: 0.18, fontSize: 7.5, bold: true, color: PPT.accent });
+      return { x: c.x + 0.14, y: c.y + 0.29, w: c.w - 0.28, h: c.h - 0.37 };
+    };
+    const open = (c) => addCard(slide, pptx, c.title, c.x, c.y, c.w, c.h);
+    let area;
+
+    area = open(L.contract);
     addKeyRows(slide, area, [['EA End Date', data.ea_end_date], ['Term Duration', data.ep_term], ['Contract Scope', data.contract_scope], ['Phase', data.phase]]);
 
-    // Both cards are always drawn, each with its own empty state, so the deck
-    // matches the preview rather than silently dropping one.
     const bundles = data.bundles || [];
-    const finite = data.finite_licenses || [];
-    let y = top + 1.8;
-    const bundleH = bundles.length ? Math.min(2.0, 0.55 + bundles.slice(0, 4).length * 0.38) : 0.95;
-    area = addCard(slide, pptx, 'Bundle Information', leftX, y, colW, bundleH);
+    area = open(L.bundles);
     if (bundles.length) {
       bundles.slice(0, Math.floor(area.h / 0.34)).forEach((bundle, i) => {
         addRect(slide, pptx, area.x, area.y + i * 0.38, area.w, 0.3, PPT.white, PPT.accent, 1);
@@ -2328,8 +2463,9 @@ locations_top5: topLocations(locations),
     } else {
       addText(slide, 'No bundles provided', { x: area.x, y: area.y + 0.06, w: area.w, h: 0.24, fontSize: 8.5, color: PPT.gray });
     }
-    y += bundleH + 0.12;
-    area = addCard(slide, pptx, 'NI SW Licenses (Finite Qty)', leftX, y, colW, Math.max(1.35, 7.24 - y - 0.15));
+
+    const finite = data.finite_licenses || [];
+    area = open(L.finite);
     if (finite.length) {
       addSimpleTable(slide, pptx, ['QTY', 'LICENSE', 'TYPE'], finite.map((r) => [
         { text: fmt(r.count), bold: true, color: PPT.accent, align: 'right' },
@@ -2340,59 +2476,29 @@ locations_top5: topLocations(locations),
       addText(slide, 'No finite licenses provided', { x: area.x, y: area.y + 0.06, w: area.w, h: 0.24, fontSize: 8.5, color: PPT.gray });
     }
 
-    // The optional VLM graph is a wide band under the centre and right columns.
-    // The four cards above it shrink to free the space; Software Usage Trend,
-    // Top Site Locations and the whole left column keep the size they have
-    // without the band.
-    const showVlm = data.vlm.show;
-    const showSw = data.sw_count.show;
-    const bandH = 1.30;
-    const centerBottom = top + 6.2 - (showVlm ? bandH + 0.14 : 0);
-    // Software Usage by Product sits under Software Usage Data. Without the
-    // band only the stats card gives up height; with it the trend does too,
-    // because 4.76in will not hold a full-size chart and three cards.
-    const trendH = showSw && showVlm ? 2.34 : 3.4;
-    const statsH = showSw ? 1.24 : centerBottom - top - 3.52;
-    area = addCard(slide, pptx, 'Software Usage Trend', centerX, top, colW, trendH);
+    area = open(L.trend);
     addTrend(slide, pptx, data.machine.df, area);
-    area = addCard(slide, pptx, 'Software Usage Data', centerX, top + trendH + 0.12, colW, statsH);
+    area = open(L.stats);
     addStatsCard(slide, pptx, area, data.machine.stats);
-    if (showSw) {
-      const swY = top + trendH + statsH + 0.24;
-      const swH = centerBottom - swY;
-      // A short card, like the VLM band: addCard's standard 0.52in of title
-      // and padding would leave almost nothing for the bars.
-      addRect(slide, pptx, centerX, swY, colW, swH, PPT.white, PPT.border);
-      addText(slide, 'SOFTWARE USAGE BY PRODUCT', { x: centerX + 0.12, y: swY + 0.07, w: colW - 0.24, h: 0.18, fontSize: 7.5, bold: true, color: PPT.accent });
-      addSwCount(slide, pptx, { x: centerX + 0.14, y: swY + 0.29, w: colW - 0.28, h: swH - 0.37 }, data.sw_count);
-    }
+    if (showSw) addSwCount(slide, pptx, slim(L.swcount), data.sw_count);
 
-    // Locations/version cards split their space by their actual row counts.
-    const nLoc = Math.max(data.locations_top5.length, 1);
-    const nVer = Math.max(data.versions_top5.length, 1);
-    const trainingH = showVlm ? 0.74 : 1.18;
-    const supportH = showVlm ? 0.56 : 0.86;
-    const tablesH = (centerBottom - top) - trainingH - supportH - 0.36;
-    // With the band on, the two tables share the reduced space by row count, so
-    // Version Usage keeps enough room for its rows.
-    const locShare = (nLoc + 1) / (nLoc + nVer + 2);
-    const hLoc = showVlm ? tablesH * locShare : Math.min(3.8 * locShare, tablesH - 0.55);
-    area = addCard(slide, pptx, 'Top Site Locations', rightX, top, colW, hLoc);
+    area = open(L.locations);
     addSimpleTable(slide, pptx, ['COUNTRY', 'STATE', 'CITY', 'COUNT'], data.locations_top5.map((r) => [
       { text: r.country || '' },
       { text: r.state || '' },
       { text: r.city || r.location || '' },
       { text: fmt(r.count), bold: true, color: PPT.accent, align: 'right' }
     ]), area, [0.27, 0.17, 0.34, 0.22], { fitAll: true, minFontSize: 5.2, minHeaderSize: 4.8 });
-    area = addCard(slide, pptx, 'Version Usage', rightX, top + hLoc + 0.12, colW, tablesH - hLoc);
+
+    area = open(L.versions);
     addSimpleTable(slide, pptx, ['PRODUCT', 'TOTAL', 'TOP VER.', '%'], data.versions_top5.map((r) => [
       { text: r.product || '' },
       { text: fmt(r.product_total ?? r.users), bold: true, align: 'right' },
       { text: r.version || '' },
       { text: `${r.pct || 0}%`, bold: true, color: PPT.accent, align: 'right' }
     ]), area, [0.38, 0.19, 0.27, 0.16], { fitAll: true, minFontSize: 5.8 });
-    const trainingY = top + tablesH + 0.24;
-    area = addCard(slide, pptx, 'Training Credit Usage', rightX, trainingY, colW, trainingH);
+
+    area = open(L.training);
     const creditSize = showVlm ? 12.5 : 16;
     // Already-formatted strings, because fmt() would read '14%' as 14.
     [['Purchased', fmt(data.credits.purchased), PPT.dark], ['Used', fmt(data.credits.used), PPT.dark],
@@ -2401,9 +2507,10 @@ locations_top5: topLocations(locations),
       addText(slide, label, { x, y: area.y, w: area.w / 3, h: 0.2, fontSize: showVlm ? 6.4 : 7.2, color: PPT.gray, align: 'center' });
       addText(slide, value, { x, y: area.y + (showVlm ? 0.19 : 0.27), w: area.w / 3, h: showVlm ? 0.26 : 0.32, fontFace: 'Georgia', fontSize: creditSize, bold: true, color, align: 'center' });
     });
-    const supportY = trainingY + trainingH + 0.12;
-    addRect(slide, pptx, rightX, supportY, colW, supportH, PPT.dark, PPT.dark);
-    addText(slide, 'TECHNICAL SUPPORT', { x: rightX + 0.14, y: supportY + (showVlm ? 0.06 : 0.10), w: colW - 0.28, h: 0.2, fontSize: showVlm ? 6.4 : 7.5, bold: true, color: PPT.muted });
+
+    const sc = L.support;
+    addRect(slide, pptx, sc.x, sc.y, sc.w, sc.h, PPT.dark, PPT.dark);
+    addText(slide, 'TECHNICAL SUPPORT', { x: sc.x + 0.14, y: sc.y + (showVlm ? 0.06 : 0.10), w: sc.w - 0.28, h: 0.2, fontSize: showVlm ? 6.4 : 7.5, bold: true, color: PPT.muted });
     const snow = !!data.support.systemlink_snow;
     const tierSize = showVlm ? 8.5 : 11;
     const scopeSize = showVlm ? 7 : 9;
@@ -2413,17 +2520,11 @@ locations_top5: topLocations(locations),
     ];
     if (hasScope) supportRuns.push({ text: data.support.scope, options: { fontSize: scopeSize, color: PPT.muted, breakLine: snow } });
     if (snow) supportRuns.push({ text: 'SystemLink Support (SNOW)', options: { fontSize: tierSize, bold: true, color: PPT.white } });
-    slide.addText(supportRuns, { x: rightX + 0.14, y: supportY + (showVlm ? 0.22 : 0.30), w: colW - 0.28, h: showVlm ? 0.30 : 0.5, fontFace: 'Calibri', valign: 'mid' });
+    slide.addText(supportRuns, { x: sc.x + 0.14, y: sc.y + (showVlm ? 0.22 : 0.30), w: sc.w - 0.28, h: showVlm ? 0.30 : 0.5, fontFace: 'Calibri', valign: 'mid' });
 
     if (showVlm) {
-      const bandY = centerBottom + 0.14;
-      const bandW = colW * 2 + gap;
-      // A short, wide card: addCard's standard 0.52in of title and padding would
-      // eat 40% of the band, so the chrome is drawn tighter here.
-      addRect(slide, pptx, centerX, bandY, bandW, bandH, PPT.white, PPT.border);
-      addText(slide, 'VLM USAGE TREND', { x: centerX + 0.12, y: bandY + 0.07, w: bandW * 0.4, h: 0.18, fontSize: 7.5, bold: true, color: PPT.accent });
-      area = { x: centerX + 0.14, y: bandY + 0.29, w: bandW - 0.28, h: bandH - 0.37 };
-      addVlmTrend(slide, pptx, data.vlm.df, area, { y: bandY + 0.06, right: centerX + bandW - 0.14 });
+      const band = L.vlm;
+      addVlmTrend(slide, pptx, data.vlm.df, slim(band), { y: band.y + 0.06, right: band.x + band.w - 0.14 });
     }
   }
 

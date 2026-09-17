@@ -424,7 +424,18 @@ def test_github_pages_lite_security():
           and "addText(slide, value, { x, y: area.y +" in app_js)
     check("pages lite defines every chart helper it calls",
           all(name in app_js for name in
-              ("VLM_LANES", "activeVlmLanes", "plotSvg", "plotBody", "trendCard", "niceScale")))
+              ("VLM_LANES", "activeVlmLanes", "plotSvg", "plotBody", "trendBody", "niceScale")))
+    # The preview and the deck drifted apart for months because each laid the
+    # slide out itself. There is one layout now and both must read it.
+    check("pages lite lays both renderings out from one model",
+          "function slideLayout(" in app_js
+          and "function layoutById(" in app_js
+          and "slideLayout(data).map(" in app_js
+          and "const L = layoutById(data);" in app_js)
+    check("pages lite measures tables once for both renderings",
+          "function tableFit(" in app_js
+          and "function cardBody(" in app_js
+          and app_js.count("tableFit(") >= 3)
     check("pages lite keeps generated geometry out of inline styles",
           'style-src \'self\'' in index
           and "data-width" in app_js
