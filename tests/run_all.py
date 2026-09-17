@@ -439,7 +439,7 @@ def test_github_pages_lite_security():
     check("pages lite keeps generated geometry out of inline styles",
           'style-src \'self\'' in index
           and "data-width" in app_js
-          and "placeAxisLabels" in app_js)
+          and "applyGeometry" in app_js)
     check("pages lite has the optional VLM usage graph",
           'id="includeVlm" type="checkbox"' in index
           and 'id="vlmText"' in index
